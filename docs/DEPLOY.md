@@ -9,7 +9,10 @@ By default the site is **open to everyone with no login**. Each visitor's browse
 | Key | Where | Needed? |
 |---|---|---|
 | `OPENROUTER_API_KEY` | https://openrouter.ai/keys (add a few dollars of credit) | **Yes.** Every agent runs on it. |
-| `BRAVE_API_KEY` | https://api-dashboard.search.brave.com/register → create a **Free AI** subscription → **API Keys** → create key (a card is needed to sign up; the free tier isn't charged) | **Recommended.** This is how Pi searches the web. Without it the Librarian can only search Wikipedia. |
+| `BRAVE_API_KEY` | https://api-dashboard.search.brave.com/register → create a **Free AI** subscription → **API Keys** → create key (a card is needed to sign up; the free tier isn't charged) | **Recommended.** Web search engine #1. |
+| `TAVILY_API_KEY` | https://app.tavily.com → sign up → copy the API key (`tvly-…`) from the dashboard (free tier: 1,000 credits/month) | **Recommended.** Web search engine #2. |
+
+With both keys set, every search runs on **both engines in parallel**. Results are merged and de-duplicated, and each is tagged with the engines that found it, so pages both engines agree on rank first. The Librarian's `verify_fact` tool cross-checks every fact it saves against several independent sources. If one engine fails (quota, outage, bad key), the other carries on automatically. If both fail, Wikipedia is the last resort.
 
 ## 2. Create the application
 
@@ -25,6 +28,7 @@ In the **Environment** tab, paste:
 OPENROUTER_API_KEY=sk-or-v1-your-key
 ALEX_MODEL=deepseek/deepseek-v4-flash
 BRAVE_API_KEY=your-brave-key
+TAVILY_API_KEY=tvly-your-key
 ```
 
 That's all that's required. Optional extras:
@@ -33,7 +37,7 @@ That's all that's required. Optional extras:
 ALEX_MODEL_ADVISOR=deepseek/deepseek-v4-pro   # a stronger model for one role
 ALEX_THINKING=off                             # off | low | medium | high (off is fastest and cheapest)
 ALEX_MAX_OUTPUT_TOKENS=16000
-TAVILY_API_KEY=...                            # alternative to Brave
+ALEX_TAVILY_DEPTH=advanced                    # deeper Tavily results (2 credits per search instead of 1)
 ALEX_REQUIRE_LOGIN=true                       # switch to username/password accounts instead of open access
 ```
 
@@ -63,20 +67,22 @@ Without this, every redeploy wipes all courses.
 Click **Deploy**. The first build takes a few minutes: it compiles the vendored Pi agent and builds the web UI. When it's running, the log shows:
 
 ```
-Project Alex on http://localhost:8787 — openrouter · deepseek/deepseek-v4-flash · search: brave · open access · data /data
+Project Alex on http://localhost:8787 — openrouter · deepseek/deepseek-v4-flash · search: brave+tavily · open access · data /data
 ```
 
 Open `https://alex.yourdomain.com`. You land straight on "What do you want to learn?".
 
 - The badge top-right should read **Live · deepseek/deepseek-v4-flash**.
-- `https://alex.yourdomain.com/api/status` shows `"search": "brave"` when your Brave key is picked up.
+- `https://alex.yourdomain.com/api/status` shows `"search": "brave+tavily"` when both search keys are picked up.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | Badge says **Demo mode** | `OPENROUTER_API_KEY` is missing or misspelled. Fix it and redeploy. |
-| `/api/status` shows `"search": "wikipedia"` | `BRAVE_API_KEY` isn't set. Search still works, but only on Wikipedia. |
+| `/api/status` shows `"search": "brave"` or `"tavily"` only | The other key isn't set. Search still works, with one engine. |
+| `/api/status` shows `"search": "wikipedia"` | Neither search key is set. Only Wikipedia is searched. |
+| The Librarian's activity shows `brave failed (…)` or `tavily failed (…)` | That engine errored (quota, outage or bad key) and the other one was used. Check that engine's dashboard for quota or key problems. |
 | An agent step fails with `401` or `402` | Bad OpenRouter key or no credit. Fix it, then click **Resume** on the course. |
 | Build fails pulling `node:22-bookworm-slim` (HTTP 429) | Docker Hub rate limit. Run `docker login` on the server, or add build arg `NODE_IMAGE=public.ecr.aws/docker/library/node:22-bookworm-slim`. |
 | Container exits: `Unknown openrouter model` | Check `ALEX_MODEL` spelling, e.g. `deepseek/deepseek-v4-flash`. |

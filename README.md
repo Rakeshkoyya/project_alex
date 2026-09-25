@@ -56,13 +56,13 @@ With no API key, Alex runs in **demo mode**. A scripted "demo brain" stands in f
 cp .env.example .env                        # then fill in:
 # OPENROUTER_API_KEY=sk-or-v1-...
 # ALEX_MODEL=deepseek/deepseek-v4-flash     # default; per role: ALEX_MODEL_TUTOR, ALEX_MODEL_ADVISOR, ...
-# BRAVE_API_KEY=...                         # web search (Pi's brave-search skill); optional
+# BRAVE_API_KEY=...  TAVILY_API_KEY=tvly-...   # web search: both run in parallel, either one alone works
 set -a; . ./.env; set +a; npm run dev
 ```
 
 Anthropic also works (`ANTHROPIC_API_KEY`, `ALEX_PROVIDER=anthropic`).
 
-**Web search** works the way Pi does it: a port of Pi's [`brave-search` skill](vendor/pi-skills/UPSTREAM.md). The Brave Search API finds results, then Mozilla Readability + Turndown turn each page into clean markdown. The Librarian uses it to find and ingest material. The Tutor uses it read-only to check facts. Set `BRAVE_API_KEY` (or `TAVILY_API_KEY`). With neither, it falls back to Wikipedia.
+**Web search** runs **Brave and Tavily in parallel**. Results are merged, de-duplicated and ranked by cross-engine agreement. If one engine fails, the other carries on, and Wikipedia is the last resort. Pages are read with a port of Pi's [`brave-search` skill](vendor/pi-skills/UPSTREAM.md): Mozilla Readability + Turndown turn each page into clean markdown. The Librarian cross-checks every fact it saves with `verify_fact` (independent sources, one per domain). The Tutor uses the same tools read-only. Set `BRAVE_API_KEY` and `TAVILY_API_KEY`.
 
 **Access is open by default:** no login. Each browser gets its own private courses through an anonymous cookie. Set `ALEX_REQUIRE_LOGIN=true` for username/password accounts instead.
 

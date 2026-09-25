@@ -82,11 +82,12 @@ The resource vault is in `data/vault/`: `catalog.json` lists trusted open resour
 
 ## Web search
 
-`server/src/library/webSearch.ts` is a TypeScript port of Pi's `brave-search` skill (reference copy and license in `vendor/pi-skills/`). Pi's coding agent runs that skill's scripts from a shell. Alex's agents have no shell, so the same logic runs as native tools:
+`server/src/library/webSearch.ts`:
 
-* `web_search`: Brave Search API (`count`, `freshness`, `country`, `includeContent`), or Tavily, or Wikipedia when no key is set. Used by the Librarian and, read-only, by the Tutor.
-* `read_webpage`: fetch → Mozilla Readability → Turndown markdown, with a main-content fallback. Also handles PDFs and Wikipedia's plain-text API, and refuses internal network addresses.
-* `fetch_and_ingest` (Librarian only) runs the same reader, then chunks the page into the student bag.
+* **Engines in parallel.** Every configured engine (`BRAVE_API_KEY`, `TAVILY_API_KEY`) is queried at once. Results are merged by normalized URL (dropping `www.`, `m.`, tracking parameters and trailing slashes), and each result records `foundBy`. Ranking is reciprocal-rank fusion, with results found by more engines first.
+* **Failover.** Each engine gets one retry on 429, 5xx or network errors. A failed engine is reported to the model (`tavily (brave failed)`) while the others carry on. If every keyed engine fails, or none is configured, Wikipedia's public API is used.
+* **`verify_fact`.** Gathers evidence for one claim: search every engine, keep one page per domain (independence), read up to 4 pages, and return the passages that best match the claim with a term-overlap hint. The model judges agreement. The Librarian must verify every point to remember this way.
+* **Page reading** is a TypeScript port of Pi's `brave-search` skill (reference copy and license in `vendor/pi-skills/`): fetch → Mozilla Readability → Turndown markdown, with a main-content fallback. It also handles PDFs and Wikipedia's plain-text API, and refuses internal network addresses. Tools: `read_webpage`, plus `fetch_and_ingest` (Librarian), which chunks the page into the student bag.
 
 ## API
 

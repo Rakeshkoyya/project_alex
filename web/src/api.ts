@@ -32,7 +32,8 @@ export interface Status {
   model: string;
   loginRequired: boolean;
   signupOpen: boolean;
-  search: "brave" | "tavily" | "wikipedia";
+  /** e.g. "brave+tavily", "tavily" or "wikipedia" */
+  search: string;
 }
 export interface Me {
   id: string;
