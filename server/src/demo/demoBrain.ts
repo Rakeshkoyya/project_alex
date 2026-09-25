@@ -1,4 +1,5 @@
-import { fauxAssistantMessage, fauxText, fauxToolCall, type AssistantMessage, type Context, type Model } from "@mariozechner/pi-ai";
+import { fauxAssistantMessage, fauxText, fauxToolCall, type AssistantMessage, type Message } from "@earendil-works/pi-ai";
+import type { DemoBrain } from "@alex/harness";
 import { app } from "../app.js";
 import type { Concept, CourseState, StudySession } from "../store/types.js";
 import { searchBag } from "../library/service.js";
@@ -9,24 +10,23 @@ import { isDue } from "../learning/fsrs.js";
 /**
  * DEMO BRAIN — a scripted stand-in for the LLM, used when no API key is set.
  *
- * It plugs into Pi's faux provider, so it drives the *real* harness: it emits
+ * @alex/harness plugs it into Pi's faux provider, so it drives the *real*
+ * harness (durable sessions, tool execution, hooks, events): it emits
  * genuine tool calls that the real tools execute against the real store. The
  * content is built mechanically from the student's bag (cloze questions,
  * extracted definitions), so it's coherent but obviously not a real tutor.
  * Set ANTHROPIC_API_KEY for the real faculty.
  */
 
-type Msg = Context["messages"][number];
-const call = (name: string, args: Record<string, unknown>) => fauxToolCall(name, args);
+type Msg = Message;
+const call = (name: string, args: Record<string, unknown>) => fauxToolCall(name, args as Parameters<typeof fauxToolCall>[1]);
 const tools = (...calls: ReturnType<typeof call>[]) => fauxAssistantMessage(calls, { stopReason: "toolUse" });
 const say = (text: string) => fauxAssistantMessage([fauxText(text)]);
 
-export async function demoBrain(context: Context, _opts: unknown, _state: unknown, model: Model<string>): Promise<AssistantMessage> {
-  const role = model.id.replace("demo-", "");
-  const courseId = context.systemPrompt?.match(/Course ID: (\S+)/)?.[1];
+export const demoBrain: DemoBrain = async ({ role, courseId, messages }): Promise<AssistantMessage> => {
   const course = courseId ? app.store!.getCourse(courseId) : undefined;
   if (!course) return say("(demo) I have no course context.");
-  const run = currentRun(context.messages);
+  const run = currentRun(messages);
   switch (role) {
     case "librarian":
       return librarian(course, run);
@@ -39,7 +39,7 @@ export async function demoBrain(context: Context, _opts: unknown, _state: unknow
     default:
       return say("The Generations engine is parked.");
   }
-}
+};
 
 interface Run {
   prompt: string;

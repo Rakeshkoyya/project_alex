@@ -39,7 +39,9 @@ export class Store {
       for (const cid of readdirSync(coursesDir)) {
         const file = join(coursesDir, cid, "course.json");
         if (!existsSync(file)) continue;
-        this.courses.set(cid, JSON.parse(readFileSync(file, "utf8")));
+        const c: CourseState = JSON.parse(readFileSync(file, "utf8"));
+        c.threads ??= {};
+        this.courses.set(cid, c);
         this.courseDirs.set(cid, join(coursesDir, cid));
       }
     }
@@ -77,6 +79,7 @@ export class Store {
       sessions: [],
       diary: [],
       activity: [],
+      threads: {},
     };
     const dir = join(this.root, "students", init.studentId, "courses", course.id);
     mkdirSync(dir, { recursive: true });

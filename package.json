@@ -2,23 +2,26 @@
   "name": "project-alex",
   "version": "0.1.0",
   "private": true,
-  "description": "Project Alex — a ZPD-driven AI university for self-learners, built on the Pi agent harness.",
+  "description": "Project Alex \u2014 a ZPD-driven AI university for self-learners, built on the Pi agent harness.",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch server/src/index.ts",
     "dev:web": "vite --config web/vite.config.ts",
-    "build": "vite build --config web/vite.config.ts",
+    "build": "npm run build:pi && vite build --config web/vite.config.ts",
     "start": "tsx server/src/index.ts",
-    "typecheck": "tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "test": "node --import tsx --test server/test/*.test.ts"
+    "typecheck": "tsc -p packages/alex-harness/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "test": "node --import tsx --test packages/alex-harness/test/*.test.ts server/test/*.test.ts",
+    "build:pi": "node scripts/build-pi.mjs",
+    "postinstall": "node scripts/build-pi.mjs --if-needed"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.19"
   },
   "dependencies": {
-    "@mariozechner/pi-agent-core": "^0.73.1",
-    "@mariozechner/pi-ai": "^0.73.1",
+    "@alex/harness": "*",
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
     "express": "^5.2.1",
     "multer": "^2.4.0",
     "typebox": "^1.3.34",
@@ -37,5 +40,9 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.1"
-  }
+  },
+  "workspaces": [
+    "vendor/pi-mono/packages/*",
+    "packages/*"
+  ]
 }

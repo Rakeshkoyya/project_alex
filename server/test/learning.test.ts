@@ -9,7 +9,7 @@ import type { CourseState, Flashcard } from "../src/store/types.js";
 const course = (): CourseState =>
   ({
     id: "c", studentId: "s", title: "t", goal: "g", hoursPerWeek: 3, stage: "active", createdAt: "",
-    bag: { resources: [], notes: [], keyPoints: [], flashcards: [] }, assessments: [], sessions: [], diary: [], activity: [],
+    bag: { resources: [], notes: [], keyPoints: [], flashcards: [] }, assessments: [], sessions: [], diary: [], activity: [], threads: {},
     concepts: [
       newConcept({ id: "basics", title: "Grade 5 basics", depth: 2, pKnown: 0.3 }),
       newConcept({ id: "mid", title: "Grade 7 idea", depth: 1, prerequisites: ["basics"], pKnown: 0.7 }),

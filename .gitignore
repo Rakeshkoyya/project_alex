@@ -3,3 +3,4 @@ dist/
 data/students/
 .env
 *.log
+vendor/pi-mono/packages/*/dist/

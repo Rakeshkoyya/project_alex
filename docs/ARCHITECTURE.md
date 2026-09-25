@@ -5,40 +5,50 @@
 │ Intake · Faculty feed · Student bag · Diagnostic · Roadmap ·        │
 │ Study room (plan / tutor chat / ZPD panel / artifacts / quiz) ·     │
 │ Record                                                              │
-└───────────────▲──────────────── SSE stream of HarnessEvents ────────┘
+└───────────────▲──────────────── SSE stream of FacultyEvents ────────┘
                 │ REST + Server-Sent Events
 ┌───────────────┴──────── server/ (Node + Express) ───────────────────┐
 │ workflow/pipeline.ts   the student journey (one lock per course)    │
-│                                                                     │
-│ harness/runner.ts      ALEX HARNESS on top of the Pi agent          │
-│   RoleSpec = system prompt + toolset → new Pi Agent per run          │
-│   streams events · logs tools · roles delegate to each other        │
-│ harness/model.ts       Claude per role, or the demo brain (no key)  │
-│                                                                     │
-│ agents/roles.ts        Librarian · Advisor · Tutor · Editorial      │
-│ agents/generations.ts  Generations engine interface (PARKED)        │
-│ tools/*                the faculty's tools (typed with TypeBox)     │
-│                                                                     │
-│ learning/zpd.ts        ZPD engine: scaffolding ladder, step-down    │
-│ learning/bkt.ts        Bayesian Knowledge Tracing                   │
-│ learning/fsrs.ts       spaced repetition                            │
-│ learning/grading.ts    objective auto-grading, mastery updates      │
-│ library/*              ingest (PDF/HTML/text), BM25, web, vault      │
-│ store/*                file-backed course state + system .md files  │
+│ agents/roles.ts        Librarian · Advisor · Tutor · Editorial specs │
+│ tools/*                the faculty's tools (TypeBox schemas)        │
+│ learning/*             ZPD engine · BKT · FSRS · grading            │
+│ library/*              ingest (PDF/HTML/text) · BM25 · web · vault  │
+│ store/*                course state + system .md files              │
+│ demo/demoBrain.ts      scripted model for demo mode                 │
+└───────────────┬─────────────────────────────────────────────────────┘
+                │ faculty.run(role, course, prompt, emit, { thread })
+┌───────────────┴──── packages/alex-harness (@alex/harness) ──────────┐
+│ Faculty      roles → one Pi AgentHarness per (course, thread)       │
+│              live briefing via transform_context hook               │
+│              Pi events → FacultyEvents · role delegation            │
+│ models.ts    Claude via Pi's Anthropic provider, or demo (faux)     │
+│ generations  Generations engine interface (PARKED)                  │
+└───────────────┬─────────────────────────────────────────────────────┘
+                │
+┌───────────────┴──── vendor/pi-mono (Pi agent, v0.87.1) ─────────────┐
+│ pi-agent-core  AgentHarness: durable JSONL sessions, lanes, hooks,  │
+│                compaction, retries, crash recovery                  │
+│ pi-ai          providers (Anthropic, …), model catalogue, faux      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## The Pi agent as our harness
+## Pi as the harness
 
-We use the open-source **Pi agent** (`@mariozechner/pi-agent-core` + `@mariozechner/pi-ai`) as the agent runtime. It handles the tool-calling loop, event streaming, provider abstraction and transcript state. Our layer, `harness/runner.ts`, adds:
+Pi's source is vendored at `vendor/pi-mono` (see `UPSTREAM.md` for the pinned commit and patches). Its packages are npm workspaces built from source on install. Alex runs on Pi's **`AgentHarness`**, its durable runtime. Each conversation is a JSONL session file (an entry tree plus operation state) that survives crashes and restarts, with lanes, hooks, automatic compaction and retries.
 
-* **Roles.** `registerRole({ role, systemPrompt(ctx), tools(ctx) })`. Each role's tools are bound to one course and session, so an agent can only touch its own student's data.
-* **One event channel.** Pi events (`message_update`, `tool_execution_*`) are mapped to `HarnessEvent`s and streamed to the browser as SSE. Tools can also emit `ui` events, such as `plan_updated`, `mastery`, `artifact`, `assessment_ready` or `stage`, that drive the interface directly.
-* **Delegation.** `ctx.delegate(role, prompt)` runs another role in the same channel. For example, the Tutor's `start_session_quiz` asks Editorial to write the quiz, which keeps the examiner independent.
-* **Persistence.** Tutor transcripts (Pi `AgentMessage[]`) are stored on the session, so a conversation continues across turns and server restarts.
-* **Demo mode.** Without `ANTHROPIC_API_KEY`, `harness/demoBrain.ts` plugs into Pi's faux provider. It is a scripted stand-in model that makes real tool calls, built mechanically from the student's bag, so the whole system can be tried and tested offline.
+`@alex/harness` (`packages/alex-harness`) is our layer on top. It is kept separate from the vendored code so upstream updates stay a clean re-copy.
 
-The Generations engine will need deeper changes to Pi (asset planners, renderers, a job queue). Its interface is fixed in `agents/generations.ts` and the Tutor already calls it through `show_artifact`, so enabling it later won't require changes elsewhere.
+* **Roles.** A `RoleSpec` (system prompt, tools, optional briefing) configures one Pi `AgentHarness`. Tools are Pi `AgentHarnessTool`s, and their tool context is the live run context (course, store, event channel, delegation).
+* **Threads.** Each `(course, thread)` pair is one persistent Pi session, stored in `pi-sessions/` in the course folder and indexed in `course.json` → `threads`:
+  * `librarian` and `advisor`: one running thread per course, so the Advisor's map reasoning carries into the roadmap.
+  * `editorial:<purpose>`: a **fresh** thread for every exam, so the examiner carries no memory of the student and stays unbiased.
+  * `tutor:<sessionId>`: one thread per study session. It resumes with full history after a restart, and Pi compacts it when it grows long.
+* **Live briefing.** A Pi `transform_context` hook appends a freshly computed block to the system prompt before every model request. The Tutor uses it to always see the learner's current ZPD state: focus concept, P(known), scaffold level, frontier, due reviews, plan progress.
+* **One event channel.** Pi harness events (`message_update`, `tool_start`, `tool_end`, `compaction_end`) become `FacultyEvent`s streamed to the browser as SSE. Tools can also emit `ui` events, such as `plan_updated`, `mastery`, `artifact`, `assessment_ready` or `stage`.
+* **Delegation.** `ctx.delegate(role, prompt)` runs another role in the same channel. The Tutor's `start_session_quiz` asks Editorial to write the quiz.
+* **Demo mode.** Without `ANTHROPIC_API_KEY`, the app's demo brain is plugged into Pi's faux provider. It makes real tool calls through the real harness, and the course id reaches it through the harness's `streamOptions.metadata`.
+
+The Generations engine will need changes inside Pi itself (asset planners, renderers, a job queue). Its interface is fixed in `packages/alex-harness/src/generations.ts`, and the Tutor already calls it through `show_artifact`. When it's built, any edits to the vendored Pi source go in `UPSTREAM.md`'s patch list.
 
 ## The student journey
 
@@ -57,7 +67,8 @@ The Generations engine will need deeper changes to Pi (asset planners, renderers
 
 Each course lives in `data/students/<student>/courses/<course>/`:
 
-* `course.json` holds the full `CourseState` (bag, concepts, roadmap, assessments, sessions and transcripts, diary, activity).
+* `course.json` holds the full `CourseState` (bag, concepts, roadmap, assessments, sessions, diary, activity, and the index of Pi session threads).
+* `pi-sessions/` holds the durable Pi JSONL sessions, one per faculty thread.
 * `chunks.json` holds the ingested passages.
 * `roadmap.md`, `notes.md` and `diary.md` are human-readable system files, regenerated on every change.
 

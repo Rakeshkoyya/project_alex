@@ -1,4 +1,8 @@
-import { registerRole, type RoleContext } from "../harness/runner.js";
+import type { RoleSpec } from "@alex/harness";
+import type { AlexCtx } from "../context.js";
+import { MASTERY_THRESHOLD } from "../learning/bkt.js";
+import { SCAFFOLD_LADDER, frontier } from "../learning/zpd.js";
+import { isDue } from "../learning/fsrs.js";
 import { PRINCIPLES } from "../learning/pedagogy.js";
 import { addKeyPointTool, addNoteTool, listBagTool, searchBagTool } from "../tools/bagTools.js";
 import { libraryTools } from "../tools/libraryTools.js";
@@ -7,20 +11,19 @@ import { editorialTools } from "../tools/editorialTools.js";
 import { tutorTools } from "../tools/tutorTools.js";
 
 /**
- * The faculty. Each role = system prompt + toolset. The harness (runner.ts)
- * turns these into Pi agents on demand.
+ * The faculty. Each role = system prompt + toolset (+ optional live briefing).
+ * @alex/harness turns each into a durable Pi AgentHarness per course thread.
  */
 
-const header = (ctx: RoleContext, role: string) => {
+const header = (ctx: AlexCtx, role: string) => {
   const c = ctx.store.getCourse(ctx.courseId);
   return `You are the ${role} at Alex, a personal university for self-learners.
-Course ID: ${c.id}
 Course: ${c.title}
 Student goal: ${c.goal}
 Today: ${new Date().toISOString().slice(0, 10)}`;
 };
 
-registerRole({
+export const librarian: RoleSpec<AlexCtx> = {
   role: "librarian",
   systemPrompt: (ctx) => `${header(ctx, "Librarian")}
 
@@ -34,10 +37,10 @@ Your job: build the student's bag — the collection of material the whole facul
 6. Finish with a short message to the student listing what's in their bag and why.
 
 Be selective: 3 excellent sources beat 10 mediocre ones. Never invent sources or URLs.`,
-  tools: (ctx) => [...libraryTools(ctx), searchBagTool(ctx), listBagTool(ctx), addNoteTool(ctx, "librarian"), addKeyPointTool(ctx, "librarian")],
-});
+  tools: [...libraryTools(), searchBagTool(), listBagTool(), addNoteTool("librarian"), addKeyPointTool("librarian")],
+};
 
-registerRole({
+export const advisor: RoleSpec<AlexCtx> = {
   role: "advisor",
   systemPrompt: (ctx) => `${header(ctx, "Academic Advisor")}
 
@@ -51,10 +54,10 @@ How you work:
 - PHASE "roadmap": after the diagnostic, use the per-concept scores to find what the student already knows (the anchor) and the gaps. Order modules from the weakest foundation upward so each module sits just beyond what is already solid (ZPD). Fit the timeline to the deadline and hours/week; if there is no deadline, choose a sustainable pace. Each module needs measurable objectives, exercises (worked examples → faded practice → interleaved challenges), memory techniques to use, and a checkpoint assessment. Add milestones. Publish with set_roadmap.
 - Write the rationale in plain words the student can read: "You already know X, so we start from Y ...".
 - End with a short, encouraging message to the student summarizing the plan.`,
-  tools: (ctx) => [...advisorTools(ctx), searchBagTool(ctx), listBagTool(ctx), addNoteTool(ctx, "advisor")],
-});
+  tools: [...advisorTools(), searchBagTool(), listBagTool(), addNoteTool("advisor")],
+};
 
-registerRole({
+export const editorial: RoleSpec<AlexCtx> = {
   role: "editorial",
   systemPrompt: (ctx) => `${header(ctx, "Editorial board (independent examiner)")}
 
@@ -67,10 +70,10 @@ Writing assessments:
 - MCQ distractors should reflect real misconceptions. The answer must exactly match one option.
 
 Grading (when asked): read the submission, grade every open-ended item 0..1 against its rubric with partial credit and specific feedback via record_grades, then write_exam_report: strengths, gaps by concept, misconceptions seen. Objective items are already auto-graded — do not change them.`,
-  tools: (ctx) => [...editorialTools(ctx)],
-});
+  tools: editorialTools(),
+};
 
-registerRole({
+export const tutor: RoleSpec<AlexCtx> = {
   role: "tutor",
   systemPrompt: (ctx) => `${header(ctx, "Tutor")}
 
@@ -90,7 +93,31 @@ Session flow:
 5. CLOSE: tick finished plan items, write_diary (what clicked, what didn't, how they learn best), then start_session_quiz on today's concepts.
 
 Style: warm, concise, one question at a time. Never lecture more than ~120 words without asking something. Praise strategy and effort specifically. Don't give answers away — guide. Use markdown sparingly.`,
-  tools: (ctx) => [...tutorTools(ctx), searchBagTool(ctx), addKeyPointTool(ctx, "tutor"), addNoteTool(ctx, "tutor")],
-});
+  tools: [...tutorTools(), searchBagTool(), addKeyPointTool("tutor"), addNoteTool("tutor")],
+  briefing: tutorBriefing,
+};
 
-export const ROLES_READY = true;
+export const ROLES = [librarian, advisor, editorial, tutor];
+
+/**
+ * Live ZPD briefing for the Tutor, recomputed before every model request (via
+ * Pi's transform_context hook), so the model always sees the learner's
+ * current state without having to call a tool first.
+ */
+function tutorBriefing(ctx: AlexCtx): string | undefined {
+  const c = ctx.store.getCourse(ctx.courseId);
+  const s = c.sessions.find((x) => x.id === ctx.sessionId);
+  if (!s) return undefined;
+  const pct = (p: number) => `${Math.round(p * 100)}%`;
+  const focus = c.concepts.find((k) => k.id === s.focusConceptId);
+  const lines = [
+    focus
+      ? `Focus: ${focus.title} (${focus.id}) — P(known) ${pct(focus.pKnown)}, zone ${focus.zone}, last scaffold level ${focus.lastHintLevel} (${SCAFFOLD_LADDER[Math.min(5, focus.lastHintLevel)].name}).`
+      : "Focus: none set yet.",
+    `ZPD frontier: ${frontier(c).slice(0, 4).map((k) => `${k.title} ${pct(k.pKnown)}`).join("; ") || "empty"}.`,
+    `Mastered: ${c.concepts.filter((k) => k.pKnown >= MASTERY_THRESHOLD).length}/${c.concepts.length}. Flashcards due: ${c.bag.flashcards.filter((f) => isDue(f)).length}.`,
+    `Today's plan: ${s.plan.map((p) => `${p.done ? "✓" : "○"} ${p.title}`).join(" · ") || "not set"}.`,
+  ];
+  if (s.quizId) lines.push("The lock-in quiz has been issued; don't start new material.");
+  return lines.join("\n");
+}

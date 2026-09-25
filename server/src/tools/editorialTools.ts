@@ -1,18 +1,19 @@
-import { Type } from "@mariozechner/pi-ai";
-import { json, tool, type RoleContext } from "../harness/runner.js";
+import { Type } from "@earendil-works/pi-ai";
+import { json } from "@alex/harness";
+import { t, type AlexCtx } from "../context.js";
 import { newId, now } from "../store/store.js";
 import type { Assessment, BloomLevel, Question, QuestionType } from "../store/types.js";
 
 const QTYPE = ["mcq", "short", "numeric", "true-false"] as const;
 const BLOOM = ["remember", "understand", "apply", "analyze", "evaluate", "create"] as const;
 
-export function editorialTools(ctx: RoleContext) {
+export function editorialTools() {
   return [
-    tool("get_concepts", "Read concept map", "List the course concepts with ids, depth and current mastery estimate.", Type.Object({}), () => {
+    t("get_concepts", "Read concept map", "List the course concepts with ids, depth and current mastery estimate.", Type.Object({}), (_p, ctx) => {
       const c = ctx.store.getCourse(ctx.courseId);
       return json(c.concepts.map((k) => ({ id: k.id, title: k.title, description: k.description, depth: k.depth, prerequisites: k.prerequisites, pKnown: Math.round(k.pKnown * 100) / 100, targetBloom: k.targetBloom })));
     }),
-    tool(
+    t(
       "create_assessment",
       "Write assessment",
       "Create an assessment for the student. Every question must target exactly one concept id. For mcq, `answer` must equal one of `options` exactly. For true-false, options are ['True','False'].",
@@ -33,7 +34,7 @@ export function editorialTools(ctx: RoleContext) {
           { minItems: 1 },
         ),
       }),
-      ({ kind, title, questions }) => {
+      ({ kind, title, questions }, ctx) => {
         const c = ctx.store.getCourse(ctx.courseId);
         const ids = new Set(c.concepts.map((k) => k.id));
         for (const q of questions) {
@@ -62,18 +63,18 @@ export function editorialTools(ctx: RoleContext) {
         return { text: `Assessment ${a.id} created with ${a.questions.length} questions.`, details: { assessmentId: a.id } };
       },
     ),
-    tool(
+    t(
       "get_submission",
       "Read submission",
       "Read a submitted assessment: questions, rubrics, the student's responses and any auto-graded results.",
       Type.Object({ assessmentId: Type.String() }),
-      ({ assessmentId }) => {
+      ({ assessmentId }, ctx) => {
         const a = ctx.store.getCourse(ctx.courseId).assessments.find((x) => x.id === assessmentId);
         if (!a) throw new Error("Unknown assessment");
         return json(a.questions.map((q) => ({ questionId: q.id, type: q.type, prompt: q.prompt, answer: q.answer, rubric: q.rubric, result: a.results.find((r) => r.questionId === q.id) })));
       },
     ),
-    tool(
+    t(
       "record_grades",
       "Record grades",
       "Record grades for open-ended questions (score 0..1, partial credit allowed) with specific, neutral feedback. Grade only against the rubric.",
@@ -81,7 +82,7 @@ export function editorialTools(ctx: RoleContext) {
         assessmentId: Type.String(),
         grades: Type.Array(Type.Object({ questionId: Type.String(), score: Type.Number({ minimum: 0, maximum: 1 }), feedback: Type.String() })),
       }),
-      ({ assessmentId, grades }) => {
+      ({ assessmentId, grades }, ctx) => {
         ctx.store.update(ctx.courseId, (c) => {
           const a = c.assessments.find((x) => x.id === assessmentId);
           if (!a) throw new Error("Unknown assessment");
@@ -94,12 +95,12 @@ export function editorialTools(ctx: RoleContext) {
         return `Recorded ${grades.length} grades.`;
       },
     ),
-    tool(
+    t(
       "write_exam_report",
       "Write exam report",
       "Write the neutral examiner's report for the record: strengths, gaps (by concept), misconceptions observed.",
       Type.Object({ assessmentId: Type.String(), summary: Type.String() }),
-      ({ assessmentId, summary }) => {
+      ({ assessmentId, summary }, ctx) => {
         ctx.store.update(ctx.courseId, (c) => {
           const a = c.assessments.find((x) => x.id === assessmentId);
           if (!a) throw new Error("Unknown assessment");

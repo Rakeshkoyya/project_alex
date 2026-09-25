@@ -2,14 +2,11 @@ import express, { type Request, type Response } from "express";
 import multer from "multer";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { app } from "./app.js";
+import type { FacultyEvent } from "@alex/harness";
+import { init } from "./app.js";
 import { Store } from "./store/store.js";
 import { Vault } from "./library/vault.js";
-import "./agents/roles.js";
-import type { HarnessEvent } from "./harness/runner.js";
-import { isDemoMode, modelFor } from "./harness/model.js";
 import { ingestUploads, prepareCourse, sessionChat, startSession, submitAssessment, tutorTurn, withCourseLock } from "./workflow/pipeline.js";
-import { runRole } from "./harness/runner.js";
 import { ingestResource } from "./library/service.js";
 import { fetchPageText } from "./library/webSearch.js";
 import { studentView } from "./learning/grading.js";
@@ -17,10 +14,11 @@ import { isDue, review, type Rating } from "./learning/fsrs.js";
 import type { CourseState } from "./store/types.js";
 
 const ROOT = resolve(process.env.ALEX_DATA_DIR ?? join(import.meta.dirname, "../../data"));
-app.store = new Store(ROOT);
-app.vault = new Vault(join(ROOT, "vault"));
+const app = init(new Store(ROOT), new Vault(join(ROOT, "vault")));
+const faculty = app.faculty!;
+const modelId = () => faculty.models.modelFor("tutor").id;
 const STUDENT = "me"; // single-user for now; auth would set this per request
-app.store.ensureStudent(STUDENT, "Student");
+app.store!.ensureStudent(STUDENT, "Student");
 
 const server = express();
 server.use(express.json({ limit: "2mb" }));
@@ -31,13 +29,13 @@ function publicCourse(c: CourseState) {
   return {
     ...c,
     assessments: c.assessments.map(studentView),
-    sessions: c.sessions.map(({ transcript, ...s }) => s),
+    threads: undefined,
     dueFlashcards: c.bag.flashcards.filter((f) => isDue(f)).length,
   };
 }
 
 /** Run a faculty operation and stream its events to the browser as SSE. */
-async function stream(res: Response, courseId: string, fn: (emit: (e: HarnessEvent) => void) => Promise<unknown>) {
+async function stream(res: Response, courseId: string, fn: (emit: (e: FacultyEvent) => void) => Promise<unknown>) {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -56,7 +54,7 @@ async function stream(res: Response, courseId: string, fn: (emit: (e: HarnessEve
 const course = (req: Request) => app.store!.getCourse(String(req.params.id));
 
 server.get("/api/status", (_req, res) => {
-  res.json({ demo: isDemoMode(), model: modelFor("tutor").id, roles: ["advisor", "librarian", "tutor", "editorial", "generations (parked)"] });
+  res.json({ demo: faculty.demo, model: modelId(), harness: "pi-agent-core (vendored) + @alex/harness", roles: ["advisor", "librarian", "tutor", "editorial", "generations (parked)"] });
 });
 
 server.get("/api/courses", (_req, res) => res.json(app.store!.listCourses(STUDENT).map(publicCourse)));
@@ -104,7 +102,7 @@ server.post("/api/courses/:id/resources", upload.array("files", 10), (req, res) 
     }
     if (b.text) added.push(ingestResource(app.store!, id, { title: b.title || "My notes", kind: "text", text: b.text, addedBy: "student" }));
     emit({ type: "ui", role: "librarian", name: "bag_updated", payload: {} });
-    await runRole("librarian", { store: app.store!, vault: app.vault!, courseId: id, emit }, `The student uploaded new material: ${added.map((r) => `"${r.title}" (${r.id})`).join(", ")}. Summarize it and extract points to remember. Do not search for other sources.`);
+    await faculty.run("librarian", id, `The student uploaded new material: ${added.map((r) => `"${r.title}" (${r.id})`).join(", ")}. Summarize it and extract points to remember. Do not search for other sources.`, emit, { thread: "librarian" });
   });
 });
 
@@ -118,10 +116,11 @@ server.post("/api/courses/:id/sessions", (req, res) => {
   return stream(res, id, (emit) => startSession(id, emit));
 });
 
-server.get("/api/courses/:id/sessions/:sid/chat", (req, res) => {
-  const s = course(req).sessions.find((x) => x.id === req.params.sid);
+server.get("/api/courses/:id/sessions/:sid/chat", async (req, res) => {
+  const c = course(req);
+  const s = c.sessions.find((x) => x.id === req.params.sid);
   if (!s) return void res.status(404).json({ error: "No such session" });
-  res.json(sessionChat(s));
+  res.json(await sessionChat(c.id, s));
 });
 
 server.post("/api/courses/:id/sessions/:sid/messages", (req, res) => {
@@ -159,5 +158,5 @@ server.use((err: Error, _req: Request, res: Response, _next: unknown) => {
 
 const PORT = Number(process.env.PORT ?? 8787);
 server.listen(PORT, () => {
-  console.log(`Project Alex server on http://localhost:${PORT} — ${isDemoMode() ? "DEMO mode (no ANTHROPIC_API_KEY)" : `model ${modelFor("tutor").id}`}`);
+  console.log(`Project Alex server on http://localhost:${PORT} — ${faculty.demo ? "DEMO mode (no ANTHROPIC_API_KEY)" : `model ${modelId()}`} · Pi AgentHarness`);
 });

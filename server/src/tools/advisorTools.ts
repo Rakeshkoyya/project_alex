@@ -1,5 +1,6 @@
-import { Type } from "@mariozechner/pi-ai";
-import { json, tool, type RoleContext } from "../harness/runner.js";
+import { Type } from "@earendil-works/pi-ai";
+import { json } from "@alex/harness";
+import { t, type AlexCtx } from "../context.js";
 import { newConcept } from "../learning/grading.js";
 import { refreshStatuses } from "../learning/zpd.js";
 import { now } from "../store/store.js";
@@ -27,12 +28,12 @@ export function courseBrief(c: CourseState) {
   };
 }
 
-export function advisorTools(ctx: RoleContext) {
+export function advisorTools() {
   return [
-    tool("get_course_brief", "Read course brief", "Goal, deadline, student's self-described level, bag contents, concept map and diagnostic results.", Type.Object({}), () =>
+    t("get_course_brief", "Read course brief", "Goal, deadline, student's self-described level, bag contents, concept map and diagnostic results.", Type.Object({}), (_p, ctx) =>
       json(courseBrief(ctx.store.getCourse(ctx.courseId))),
     ),
-    tool(
+    t(
       "set_concept_map",
       "Draft concept map",
       "Define the course's knowledge graph. Include the target concepts (depth 0) AND the foundations they rest on (depth 1 = one level more basic, depth 2 = even more basic...). Prerequisites reference other concept keys. Keep existing mastery for concepts that already exist.",
@@ -49,7 +50,7 @@ export function advisorTools(ctx: RoleContext) {
           { minItems: 2 },
         ),
       }),
-      ({ concepts }) => {
+      ({ concepts }, ctx) => {
         ctx.store.update(ctx.courseId, (c) => {
           const keep = new Map(c.concepts.map((k) => [k.id, k]));
           c.concepts = concepts.map((k) => {
@@ -68,7 +69,7 @@ export function advisorTools(ctx: RoleContext) {
         return `Concept map saved with ${concepts.length} concepts: ${concepts.map((k) => conceptId(k.key)).join(", ")}`;
       },
     ),
-    tool(
+    t(
       "set_roadmap",
       "Publish roadmap",
       "Publish the personalized roadmap (syllabus + timeline). Modules must be ordered so every module only needs concepts from earlier modules or ones the student already knows. Start with the weakest foundations the diagnostic revealed.",
@@ -92,7 +93,7 @@ export function advisorTools(ctx: RoleContext) {
         ),
         milestones: Type.Array(Type.Object({ day: Type.Number(), title: Type.String() })),
       }),
-      (r) => {
+      (r, ctx) => {
         const c = ctx.store.getCourse(ctx.courseId);
         const known = new Set(c.concepts.map((k) => k.id));
         const bad = r.modules.flatMap((m) => m.conceptIds).filter((id) => !known.has(id));

@@ -203,8 +203,8 @@ export interface StudySession {
   endedAt?: string;
   plan: PlanItem[];
   focusConceptId?: string;
-  /** Pi agent transcript (AgentMessage[]), persisted so sessions survive restarts. */
-  transcript: unknown[];
+  /** Faculty thread holding this session's Tutor conversation (a durable Pi session). */
+  thread: string;
   quizId?: string;
   summary?: string;
 }
@@ -244,4 +244,16 @@ export interface CourseState {
   sessions: StudySession[];
   diary: DiaryEntry[];
   activity: ActivityEvent[];
+  /** Pi session metadata for every faculty thread of this course (thread key → JSONL session). */
+  threads: Record<string, PiSessionRef>;
+}
+
+/** Enough of Pi's JsonlSessionMetadata to reopen a durable session file. */
+export interface PiSessionRef {
+  id: string;
+  createdAt: number;
+  storageVersion: number;
+  cwd: string;
+  path: string;
+  modifiedAt: number;
 }

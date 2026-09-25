@@ -2,7 +2,17 @@
 
 Alex is an AI learning system that teaches anything, the way a great one-to-one tutor would. It finds where your knowledge ends and teaches from that point, one step beyond what you can do alone: your **Zone of Proximal Development**. It uses well-supported learning techniques along the way: contingent scaffolding, retrieval practice, spaced repetition, mastery learning, and memorization aids such as memory palaces and mnemonics.
 
-It is built on the open-source **[Pi agent](https://github.com/badlogic/pi-mono)** (`@mariozechner/pi-agent-core`) as its agent harness.
+It is built on the open-source **[Pi agent](https://github.com/badlogic/pi-mono)**. Pi's source is vendored in this repo (`vendor/pi-mono`, pinned to v0.87.1), and Alex's multi-role learning harness (`packages/alex-harness`) is built on Pi's durable `AgentHarness`.
+
+## Repository layout
+
+```
+vendor/pi-mono/          Pi agent source (ai, agent, chord, telemetry), pinned upstream release
+packages/alex-harness/   @alex/harness — the Alex faculty runtime on top of Pi's AgentHarness
+server/                  the learning system: roles, tools, ZPD/BKT/FSRS engines, library, API
+web/                     React UI
+data/vault/              curated resource catalogue + full-text primers
+```
 
 ## The faculty
 
@@ -48,11 +58,13 @@ export TAVILY_API_KEY=...                  # optional web search (or BRAVE_API_K
 npm run dev
 ```
 
+`npm install` also builds the vendored Pi packages from source. To update Pi, run `scripts/sync-pi.sh <tag>` (see `vendor/pi-mono/UPSTREAM.md`).
+
 For production, run `npm run build && npm start`. The server then also serves the built UI on `:8787`.
 
 Other scripts:
 
-* `npm test` runs the learning-engine unit tests and an end-to-end journey test (demo mode).
+* `npm test` runs the harness tests (durability across restarts, live briefing, delegation), the learning-engine unit tests, and an end-to-end journey test (demo mode).
 * `npm run typecheck` typechecks the server and the web app.
 
 ## Documentation

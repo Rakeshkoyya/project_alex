@@ -1,5 +1,4 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { runRole, type HarnessEvent } from "../harness/runner.js";
+import type { Emit, RoleName } from "@alex/harness";
 import { app } from "../app.js";
 import { newId, now } from "../store/store.js";
 import type { CourseState, StudySession } from "../store/types.js";
@@ -15,9 +14,17 @@ import { MASTERY_THRESHOLD } from "../learning/bkt.js";
  *          ─► Editorial writes the diagnostic ─► (student takes it)
  *          ─► Editorial grades ─► Advisor publishes the ZPD roadmap
  *          ─► daily Tutor sessions (plan → teach → practice → quiz) ─► …
+ *
+ * Every run goes through the faculty (@alex/harness on Pi's AgentHarness) on a
+ * named *thread* — a durable Pi session stored with the course:
+ *
+ *   librarian              one running thread per course (remembers what it gathered)
+ *   advisor                one running thread (the map reasoning carries into the roadmap)
+ *   editorial:<purpose>    a FRESH thread per exam — the examiner carries no memory of
+ *                          the student between assessments, which keeps grading unbiased
+ *   tutor:<sessionId>      one thread per study session (continuity across sessions
+ *                          comes from the diary + learner state, not a giant transcript)
  */
-
-type Emit = (e: HarnessEvent) => void;
 
 const locks = new Map<string, Promise<unknown>>();
 /** One faculty operation per course at a time (they all mutate the same record). */
@@ -32,7 +39,8 @@ export async function withCourseLock<T>(courseId: string, fn: () => Promise<T>):
   }
 }
 
-const ctx = (courseId: string, emit: Emit, sessionId?: string) => ({ store: app.store!, vault: app.vault!, courseId, emit, sessionId });
+const run = (role: RoleName, courseId: string, prompt: string, emit: Emit, thread: string, sessionId?: string) =>
+  app.faculty!.run(role, courseId, prompt, emit, { thread, extra: { sessionId } });
 
 const stage = (courseId: string, s: CourseState["stage"], emit: Emit) => {
   app.store!.update(courseId, (c) => (c.stage = s));
@@ -72,20 +80,24 @@ export async function prepareCourse(courseId: string, emit: Emit) {
   const uploaded = c.bag.resources.filter((r) => r.addedBy === "student");
 
   stage(courseId, "gathering", emit);
-  await runRole(
+  await run(
     "librarian",
-    ctx(courseId, emit),
+    courseId,
     uploaded.length
       ? `The student uploaded their own material: ${uploaded.map((r) => `"${r.title}" (${r.id})`).join(", ")}. Summarize each uploaded resource, then add complementary sources (especially foundations) from the vault/web, and extract points to remember.`
       : `The student described what they want to learn: "${c.goal}" (self-described level: ${c.currentLevel ?? "unknown"}). Find and ingest the best material, then extract points to remember.`,
+    emit,
+    "librarian",
   );
 
-  await runRole("advisor", ctx(courseId, emit), "PHASE: map. Build the concept map for this course (targets + foundations) with set_concept_map. Do not publish a roadmap yet — the diagnostic comes first.");
+  await run("advisor", courseId, "PHASE: map. Build the concept map for this course (targets + foundations) with set_concept_map. Do not publish a roadmap yet — the diagnostic comes first.", emit, "advisor");
 
-  await runRole(
+  await run(
     "editorial",
-    ctx(courseId, emit),
+    courseId,
     "Write the DIAGNOSTIC assessment (kind: diagnostic) covering every concept in the map, including foundations, so we can locate the student's zone of proximal development.",
+    emit,
+    "editorial:diagnostic",
   );
   stage(courseId, "assessment", emit);
 }
@@ -107,7 +119,7 @@ export async function submitAssessment(courseId: string, assessmentId: string, r
 
   emit({ type: "ui", role: "editorial", name: "grading", payload: { assessmentId } });
   if (needsEditorial) {
-    await runRole("editorial", ctx(courseId, emit), `Grade the submission for assessment ${assessmentId}: use get_submission, record_grades for every short-answer item, then write_exam_report.`);
+    await run("editorial", courseId, `Grade the submission for assessment ${assessmentId}: use get_submission, record_grades for every short-answer item, then write_exam_report.`, emit, `editorial:grade:${assessmentId}`);
   }
   const a = store.update(courseId, (c) => {
     const a = c.assessments.find((x) => x.id === assessmentId)!;
@@ -119,7 +131,7 @@ export async function submitAssessment(courseId: string, assessmentId: string, r
 
   if (a.kind === "diagnostic") {
     stage(courseId, "planning", emit);
-    await runRole("advisor", ctx(courseId, emit), "PHASE: roadmap. The diagnostic is graded. Read the course brief and publish the personalized ZPD roadmap with set_roadmap.");
+    await run("advisor", courseId, "PHASE: roadmap. The diagnostic is graded. Read the course brief and publish the personalized ZPD roadmap with set_roadmap.", emit, "advisor");
     stage(courseId, "active", emit);
   } else {
     store.update(courseId, (c) =>
@@ -145,7 +157,8 @@ function advanceModules(c: CourseState) {
 
 export async function startSession(courseId: string, emit: Emit): Promise<StudySession> {
   const store = app.store!;
-  const s: StudySession = { id: newId("sess"), startedAt: now(), plan: [], transcript: [] };
+  const id = newId("sess");
+  const s: StudySession = { id, startedAt: now(), plan: [], thread: `tutor:${id}` };
   store.update(courseId, (c) => {
     for (const old of c.sessions) old.endedAt ??= now();
     c.sessions.push(s);
@@ -156,21 +169,15 @@ export async function startSession(courseId: string, emit: Emit): Promise<StudyS
 }
 
 export async function tutorTurn(courseId: string, sessionId: string, text: string, emit: Emit) {
-  const store = app.store!;
-  const s = store.getCourse(courseId).sessions.find((x) => x.id === sessionId);
+  const s = app.store!.getCourse(courseId).sessions.find((x) => x.id === sessionId);
   if (!s) throw new Error("Unknown session");
-  const result = await runRole("tutor", ctx(courseId, emit, sessionId), text, { messages: s.transcript as AgentMessage[] });
-  store.update(courseId, (c) => {
-    const live = c.sessions.find((x) => x.id === sessionId)!;
-    live.transcript = result.messages;
-  });
-  return result.text;
+  return run("tutor", courseId, text, emit, s.thread, sessionId);
 }
 
-/** Chat history for the UI: user and assistant text only (tool traffic stays internal). */
-export function sessionChat(s: StudySession) {
+/** Chat history for the UI, read back from the durable Pi session (tool traffic stays internal). */
+export async function sessionChat(courseId: string, s: StudySession) {
   const out: { role: "student" | "tutor"; text: string }[] = [];
-  for (const m of s.transcript as any[]) {
+  for (const m of (await app.faculty!.messages("tutor", courseId, s.thread)) as any[]) {
     if (m.role === "user") {
       const t = typeof m.content === "string" ? m.content : m.content.map((x: any) => x.text ?? "").join("");
       if (!t.startsWith("[session start]")) out.push({ role: "student", text: t });

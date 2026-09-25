@@ -11,16 +11,14 @@ import { join } from "node:path";
 delete process.env.ANTHROPIC_API_KEY;
 process.env.ALEX_DEMO_TPS = "1000000";
 
-const { app } = await import("../src/app.js");
+const { app, init } = await import("../src/app.js");
 const { Store } = await import("../src/store/store.js");
 const { Vault } = await import("../src/library/vault.js");
-await import("../src/agents/roles.js");
 const P = await import("../src/workflow/pipeline.js");
 
 const root = mkdtempSync(join(tmpdir(), "alex-"));
 cpSync(join(import.meta.dirname, "../../data/vault"), join(root, "vault"), { recursive: true });
-app.store = new Store(root);
-app.vault = new Vault(join(root, "vault"));
+init(new Store(root), new Vault(join(root, "vault")));
 
 const events: any[] = [];
 const emit = (e: any) => events.push(e);
@@ -77,5 +75,12 @@ test("student journey: goal → bag → diagnostic → ZPD roadmap → tutoring 
   const graded = await P.submitAssessment(c.id, quizId, Object.fromEntries(quiz.questions.map((q) => [q.id, q.answer])), emit);
   assert.equal(graded.status, "graded");
   assert.ok(graded.score! >= 75);
-  assert.ok(P.sessionChat(store.getCourse(c.id).sessions.find((x) => x.id === sess.id)!).length >= 4);
+  const chat = await P.sessionChat(c.id, store.getCourse(c.id).sessions.find((x) => x.id === sess.id)!);
+  assert.ok(chat.length >= 4, "tutor conversation is read back from the durable Pi session");
+
+  // Every faculty thread is a Pi JSONL session stored with the course.
+  const threads = Object.keys(store.getCourse(c.id).threads);
+  for (const t of ["librarian", "advisor", "editorial:diagnostic", `tutor:${sess.id}`]) assert.ok(threads.includes(t), `thread ${t}`);
+  assert.ok(threads.some((t) => t.startsWith("editorial:grade:") || t.startsWith("editorial:")), "editorial uses fresh threads");
+  await app.faculty!.close();
 });
