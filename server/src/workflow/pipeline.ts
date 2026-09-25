@@ -92,13 +92,17 @@ export async function prepareCourse(courseId: string, emit: Emit) {
 
   await run("advisor", courseId, "PHASE: map. Build the concept map for this course (targets + foundations) with set_concept_map. Do not publish a roadmap yet — the diagnostic comes first.", emit, "advisor");
 
+  if (!store.getCourse(courseId).concepts.length) throw new Error("The Advisor finished without a concept map — press Resume to try again.");
+
   await run(
     "editorial",
     courseId,
     "Write the DIAGNOSTIC assessment (kind: diagnostic) covering every concept in the map, including foundations, so we can locate the student's zone of proximal development.",
     emit,
-    "editorial:diagnostic",
+    `editorial:diagnostic:${Date.now().toString(36)}`,
   );
+  if (!store.getCourse(courseId).assessments.some((a) => a.kind === "diagnostic" && a.status === "open"))
+    throw new Error("Editorial finished without writing the diagnostic — press Resume to try again.");
   stage(courseId, "assessment", emit);
 }
 
@@ -131,14 +135,20 @@ export async function submitAssessment(courseId: string, assessmentId: string, r
 
   if (a.kind === "diagnostic") {
     stage(courseId, "planning", emit);
-    await run("advisor", courseId, "PHASE: roadmap. The diagnostic is graded. Read the course brief and publish the personalized ZPD roadmap with set_roadmap.", emit, "advisor");
-    stage(courseId, "active", emit);
+    await planRoadmap(courseId, emit);
   } else {
     store.update(courseId, (c) =>
       c.diary.push({ id: newId("d"), sessionId: a.sessionId, author: "editorial", text: `${a.title}: ${a.score}%. ${a.summary ?? ""}`.trim(), createdAt: now() }),
     );
   }
   return a;
+}
+
+/** Step 4: the Advisor publishes the roadmap from the graded diagnostic. */
+export async function planRoadmap(courseId: string, emit: Emit) {
+  await run("advisor", courseId, "PHASE: roadmap. The diagnostic is graded. Read the course brief and publish the personalized ZPD roadmap with set_roadmap.", emit, "advisor");
+  if (!app.store!.getCourse(courseId).roadmap) throw new Error("The Advisor finished without publishing a roadmap — try again.");
+  stage(courseId, "active", emit);
 }
 
 /** Mark roadmap modules done when all their concepts are mastered. */

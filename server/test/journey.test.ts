@@ -9,6 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 delete process.env.ANTHROPIC_API_KEY;
+delete process.env.OPENROUTER_API_KEY;
+delete process.env.ALEX_PROVIDER;
 process.env.ALEX_DEMO_TPS = "1000000";
 
 const { app, init } = await import("../src/app.js");
@@ -80,7 +82,8 @@ test("student journey: goal → bag → diagnostic → ZPD roadmap → tutoring 
 
   // Every faculty thread is a Pi JSONL session stored with the course.
   const threads = Object.keys(store.getCourse(c.id).threads);
-  for (const t of ["librarian", "advisor", "editorial:diagnostic", `tutor:${sess.id}`]) assert.ok(threads.includes(t), `thread ${t}`);
+  for (const t of ["librarian", "advisor", `tutor:${sess.id}`]) assert.ok(threads.includes(t), `thread ${t}`);
+  assert.ok(threads.some((t) => t.startsWith("editorial:diagnostic:")), "diagnostic written on its own editorial thread");
   assert.ok(threads.some((t) => t.startsWith("editorial:grade:") || t.startsWith("editorial:")), "editorial uses fresh threads");
   await app.faculty!.close();
 });

@@ -1,0 +1,23 @@
+# Dokploy "Compose" deployment (or local: `docker compose up --build`).
+# Put secrets in Dokploy's Environment tab (or a local .env file) — never in git.
+services:
+  alex:
+    build: .
+    restart: unless-stopped
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY}
+      ALEX_MODEL: ${ALEX_MODEL:-deepseek/deepseek-v4-flash}
+      ALEX_SECRET: ${ALEX_SECRET:?set ALEX_SECRET to a long random string}
+      ALEX_ALLOW_SIGNUP: ${ALEX_ALLOW_SIGNUP:-true}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+    volumes:
+      - alex-data:/data
+    expose:
+      - "8787"
+    # For local runs without Dokploy's proxy, uncomment:
+    # ports:
+    #   - "8787:8787"
+
+volumes:
+  alex-data:

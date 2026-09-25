@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+**/dist
+web/dist
+data/students
+data/users.json
+data/.secret
+.git
+.env
+.env.*
+!.env.example
+docs/screenshots
+*.log

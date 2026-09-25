@@ -4,7 +4,8 @@ import { Fragment, type ReactNode } from "react";
 
 function inline(text: string, key = 0): ReactNode[] {
   const out: ReactNode[] = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`|_[^_]+_|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
+  // `_x_` only counts as emphasis at word boundaries, so snake_case names stay intact.
+  const re = /(\*\*[^*]+\*\*|`[^`]+`|(?<![\w])_[^_\n]+_(?![\w])|\*[^*\s][^*]*\*|\[[^\]]+\]\([^)]+\))/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;

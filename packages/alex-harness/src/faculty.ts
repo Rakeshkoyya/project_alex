@@ -156,6 +156,13 @@ export class Faculty<C extends FacultyContext> {
       .map((e) => e.message);
   }
 
+  /** Close every open thread of a course (before its files are deleted). */
+  async forgetCourse(courseId: string) {
+    for (const t of [...this.open.values()]) if (t.key.startsWith(`${courseId}/`)) await this.closeThread(t);
+    await this.repos.get(courseId)?.close?.(ctx0);
+    this.repos.delete(courseId);
+  }
+
   async close() {
     for (const t of this.open.values()) await this.closeThread(t);
     for (const r of this.repos.values()) await r.close?.(ctx0);
@@ -203,6 +210,7 @@ export class Faculty<C extends FacultyContext> {
         session,
         models: this.models.models,
         model: this.models.modelFor(role),
+        thinkingLevel: thinkingLevel(),
         systemPrompt: () => spec.systemPrompt(live()),
         tools,
         toolContext: () => live(),
@@ -261,6 +269,12 @@ export class Faculty<C extends FacultyContext> {
     await t.harness.close(ctx0).catch(() => {});
     await t.session.close(ctx0).catch(() => {});
   }
+}
+
+const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+function thinkingLevel(): (typeof THINKING)[number] {
+  const v = (process.env.ALEX_THINKING ?? "off").toLowerCase();
+  return (THINKING as readonly string[]).includes(v) ? (v as (typeof THINKING)[number]) : "off";
 }
 
 function describe(err: unknown): string {

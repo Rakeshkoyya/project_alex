@@ -82,6 +82,7 @@ export function CourseView({ id, tab }: { id: string; tab?: string }) {
             {course.deadline && <> · deadline <b>{course.deadline}</b></>} · {course.hoursPerWeek} h/week
           </p>
         </div>
+        <div className="head-right">
         <ol className="stepper">
           {STEPS.map((s) => {
             const i = ORDER.indexOf(s.stage);
@@ -93,6 +94,18 @@ export function CourseView({ id, tab }: { id: string; tab?: string }) {
             );
           })}
         </ol>
+          <button
+            className="link danger"
+            disabled={busy}
+            onClick={async () => {
+              if (!confirm(`Delete "${course.title}" and all its progress? This can't be undone.`)) return;
+              await api.deleteCourse(id);
+              go("/");
+            }}
+          >
+            Delete course
+          </button>
+        </div>
       </div>
       <nav className="tabs">
         {TABS.map((t) => (
@@ -103,6 +116,12 @@ export function CourseView({ id, tab }: { id: string; tab?: string }) {
         ))}
       </nav>
       {error && <p className="error banner">⚠️ {error}</p>}
+      {!busy && (course.stage === "gathering" || course.stage === "planning" || (course.stage === "intake" && started.current)) && (
+        <div className="banner resume">
+          <span>{course.stage === "planning" ? "The roadmap hasn't been published yet." : "Course preparation didn't finish."}</span>
+          <button className="primary" onClick={() => run(`/api/courses/${id}/resume`).then(() => refresh().then(() => go(`/course/${id}/${course.stage === "planning" ? "roadmap" : "diagnostic"}`)))}>Resume</button>
+        </div>
+      )}
 
       {active === "prepare" && (
         <section className="panel">

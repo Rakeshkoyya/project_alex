@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ActivityEvent, Chunk, CourseState, RoleName, Student } from "./types.js";
@@ -90,6 +90,14 @@ export class Store {
     return course;
   }
 
+  deleteCourse(id: string) {
+    const dir = this.courseDirs.get(id);
+    this.courses.delete(id);
+    this.chunks.delete(id);
+    this.courseDirs.delete(id);
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
+
   getCourse(id: string): CourseState {
     const c = this.courses.get(id);
     if (!c) throw new Error(`Course ${id} not found`);
@@ -113,7 +121,10 @@ export class Store {
 
   private save(course: CourseState) {
     const dir = this.courseDirs.get(course.id)!;
-    writeFileSync(join(dir, "course.json"), JSON.stringify(course, null, 2));
+    // Write-then-rename so a crash mid-write never leaves a truncated course.json.
+    const tmp = join(dir, "course.json.tmp");
+    writeFileSync(tmp, JSON.stringify(course, null, 2));
+    renameSync(tmp, join(dir, "course.json"));
     writeFileSync(join(dir, "roadmap.md"), renderRoadmapMd(course));
     writeFileSync(join(dir, "diary.md"), renderDiaryMd(course));
     writeFileSync(join(dir, "notes.md"), renderNotesMd(course));

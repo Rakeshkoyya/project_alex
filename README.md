@@ -49,14 +49,23 @@ npm install
 npm run dev            # server on :8787 + web on :5173 → open http://localhost:5173
 ```
 
-With no API key, Alex runs in **demo mode**. A scripted "demo brain" stands in for the language model, but the whole harness runs for real: agent loop, tool calls, ZPD engine, grading and storage. This lets you click through the complete journey offline. For the real faculty:
+With no API key, Alex runs in **demo mode**. A scripted "demo brain" stands in for the language model, but the whole harness runs for real: agent loop, tool calls, ZPD engine, grading and storage. This lets you click through the complete journey offline. For the real faculty, the default is **DeepSeek V4 Flash via OpenRouter**:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export ALEX_MODEL=claude-sonnet-5          # default; per role: ALEX_MODEL_TUTOR, ALEX_MODEL_ADVISOR, ...
-export TAVILY_API_KEY=...                  # optional web search (or BRAVE_API_KEY); falls back to Wikipedia
-npm run dev
+cp .env.example .env                        # then fill in:
+# OPENROUTER_API_KEY=sk-or-v1-...
+# ALEX_MODEL=deepseek/deepseek-v4-flash     # default; per role: ALEX_MODEL_TUTOR, ALEX_MODEL_ADVISOR, ...
+# ALEX_SECRET=<openssl rand -hex 32>        # signs login cookies
+set -a; . ./.env; set +a; npm run dev
 ```
+
+Anthropic also works (`ANTHROPIC_API_KEY`, `ALEX_PROVIDER=anthropic`). Optional `TAVILY_API_KEY` or `BRAVE_API_KEY` improve the Librarian's web search; otherwise it uses Wikipedia.
+
+Students sign up with a username and password. Each account sees only its own courses. Set `ALEX_ALLOW_SIGNUP=false` to close registration.
+
+## Deploy
+
+One Docker container serves the API and the UI on port 8787, with student data in the `/data` volume. See **[docs/DEPLOY.md](docs/DEPLOY.md)** for step-by-step Dokploy instructions. A `docker-compose.yml` is included too.
 
 `npm install` also builds the vendored Pi packages from source. To update Pi, run `scripts/sync-pi.sh <tag>` (see `vendor/pi-mono/UPSTREAM.md`).
 
@@ -69,5 +78,6 @@ Other scripts:
 
 ## Documentation
 
+* [docs/DEPLOY.md](docs/DEPLOY.md): deploying on Dokploy (or any Docker host).
 * [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the harness, roles, workflow, data layout and API.
 * [docs/PEDAGOGY.md](docs/PEDAGOGY.md): the teaching method, the research behind it, and where each piece lives in the code.

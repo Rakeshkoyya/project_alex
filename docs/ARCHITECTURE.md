@@ -21,7 +21,8 @@
 │ Faculty      roles → one Pi AgentHarness per (course, thread)       │
 │              live briefing via transform_context hook               │
 │              Pi events → FacultyEvents · role delegation            │
-│ models.ts    Claude via Pi's Anthropic provider, or demo (faux)     │
+│ models.ts    OpenRouter (default: DeepSeek V4 Flash) or Anthropic,  │
+│              via Pi's providers; demo brain via Pi's faux provider  │
 │ generations  Generations engine interface (PARKED)                  │
 └───────────────┬─────────────────────────────────────────────────────┘
                 │
@@ -46,7 +47,7 @@ Pi's source is vendored at `vendor/pi-mono` (see `UPSTREAM.md` for the pinned co
 * **Live briefing.** A Pi `transform_context` hook appends a freshly computed block to the system prompt before every model request. The Tutor uses it to always see the learner's current ZPD state: focus concept, P(known), scaffold level, frontier, due reviews, plan progress.
 * **One event channel.** Pi harness events (`message_update`, `tool_start`, `tool_end`, `compaction_end`) become `FacultyEvent`s streamed to the browser as SSE. Tools can also emit `ui` events, such as `plan_updated`, `mastery`, `artifact`, `assessment_ready` or `stage`.
 * **Delegation.** `ctx.delegate(role, prompt)` runs another role in the same channel. The Tutor's `start_session_quiz` asks Editorial to write the quiz.
-* **Demo mode.** Without `ANTHROPIC_API_KEY`, the app's demo brain is plugged into Pi's faux provider. It makes real tool calls through the real harness, and the course id reaches it through the harness's `streamOptions.metadata`.
+* **Demo mode.** Without `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`, the app's demo brain is plugged into Pi's faux provider. It makes real tool calls through the real harness, and the course id reaches it through the harness's `streamOptions.metadata`.
 
 The Generations engine will need changes inside Pi itself (asset planners, renderers, a job queue). Its interface is fixed in `packages/alex-harness/src/generations.ts`, and the Tutor already calls it through `show_artifact`. When it's built, any edits to the vendored Pi source go in `UPSTREAM.md`'s patch list.
 
@@ -74,11 +75,22 @@ Each course lives in `data/students/<student>/courses/<course>/`:
 
 The resource vault is in `data/vault/`: `catalog.json` lists trusted open resources, and `primers/` holds full-text primers the tutor can teach from.
 
+## Accounts
+
+Accounts are stored in `data/users.json` with scrypt-hashed passwords. Sessions use a 30-day HMAC-signed HttpOnly cookie, keyed by `ALEX_SECRET`. Every `/api/courses` route requires a session, and a course is visible only to the student who owns it.
+
 ## API
+
+All `/api/courses` routes require a signed-in student.
+
 
 | Method | Path | |
 |---|---|---|
-| GET | `/api/status` | demo mode, model |
+| GET | `/api/health` | liveness (Docker health check) |
+| GET | `/api/status` | provider, model, demo mode, whether sign-up is open |
+| POST | `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout`; GET `/api/auth/me` | student accounts (signed HttpOnly cookie) |
+| DELETE | `/api/courses/:id` | delete a course and its Pi sessions |
+| POST | `/api/courses/:id/resume` | **SSE**: continue a course whose last faculty step failed |
 | GET/POST | `/api/courses` | list / enroll (multipart: goal, files[], currentLevel, deadline, hoursPerWeek) |
 | GET | `/api/courses/:id` | course (answer keys and transcripts stripped) |
 | POST | `/api/courses/:id/prepare` | **SSE**: Librarian → Advisor map → Editorial diagnostic |
