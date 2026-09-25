@@ -46,6 +46,8 @@ function stubFetch(b: Behaviour) {
       ] });
     }
     if (url.includes("wikipedia.org/w/api.php?action=query&list=search")) return json({ query: { search: [{ title: "Photosynthesis", snippet: "wiki <b>snippet</b>" }] } });
+    if (url.includes("wikipedia.org/w/api.php?action=query&prop=extracts"))
+      return json({ query: { pages: { 1: { title: "Photosynthesis", extract: "== Overview ==\nPhotosynthesis happens in the chloroplasts of plant cells, which contain chlorophyll that absorbs light energy." } } } });
     return new Response(ARTICLE, { headers: { "content-type": "text/html" } });
   }) as typeof fetch;
   return calls;
@@ -64,13 +66,15 @@ async function withEnv(env: Record<string, string | undefined>, fn: () => Promis
 
 const BOTH = { BRAVE_API_KEY: "brave-test", TAVILY_API_KEY: "tvly-test", ALEX_SEARCH_ENGINES: undefined };
 
-test("both engines run in parallel; results merged, de-duplicated and ranked by agreement", () =>
+test("Brave, Tavily and Wikipedia run in parallel; results merged, de-duplicated and ranked by agreement", () =>
   withEnv(BOTH, async () => {
     const calls = stubFetch({ brave: "ok", tavily: "ok" });
-    const { provider, hits, engines } = await webSearch("photosynthesis grade 9", { count: 5, freshness: "py", country: "in" });
-    assert.equal(provider, "brave+tavily");
-    assert.deepEqual(engines.map((e) => [e.engine, e.ok]), [["brave", true], ["tavily", true]]);
-    assert.equal(hits.length, 3, "britannica appears once despite www./utm/trailing differences");
+    const { provider, hits, engines } = await webSearch("photosynthesis grade 9", { count: 5, freshness: "py", country: "in", engineQueries: { wikipedia: "Photosynthesis" } });
+    assert.equal(provider, "brave+tavily+wikipedia");
+    assert.deepEqual(engines.map((e) => [e.engine, e.ok]), [["brave", true], ["tavily", true], ["wikipedia", true]]);
+    assert.equal(hits.length, 4, "britannica appears once despite www./utm/trailing differences");
+    assert.ok(hits.some((h) => h.domain === "en.wikipedia.org"), "Wikipedia is a peer engine, not just a fallback");
+    assert.match(calls.find((c) => c.url.includes("list=search"))!.url, /srsearch=Photosynthesis$/, "Wikipedia gets its own short query");
     assert.equal(hits[0].domain, "britannica.com");
     assert.deepEqual(hits[0].foundBy.sort(), ["brave", "tavily"], "cross-engine agreement ranks first");
     assert.match(hits[0].snippet, /green plants use light energy/, "keeps the richer snippet");
@@ -87,8 +91,8 @@ test("if Brave fails, Tavily carries on (and the failure is reported)", () =>
   withEnv(BOTH, async () => {
     stubFetch({ brave: "500", tavily: "ok" });
     const { provider, hits, engines } = await webSearch("photosynthesis");
-    assert.equal(provider, "tavily (brave failed)");
-    assert.ok(hits.length >= 2 && hits.every((h) => h.foundBy.join() === "tavily"));
+    assert.equal(provider, "tavily+wikipedia (brave failed)");
+    assert.ok(hits.length >= 2 && hits.every((h) => !h.foundBy.includes("brave")));
     assert.match(engines.find((e) => e.engine === "brave")!.error!, /HTTP 500/);
   }));
 
@@ -96,15 +100,23 @@ test("if Tavily fails, Brave carries on", () =>
   withEnv(BOTH, async () => {
     stubFetch({ brave: "ok", tavily: "401" });
     const { provider, hits } = await webSearch("photosynthesis");
-    assert.equal(provider, "brave (tavily failed)");
-    assert.ok(hits.every((h) => h.foundBy.join() === "brave"));
+    assert.equal(provider, "brave+wikipedia (tavily failed)");
+    assert.ok(hits.every((h) => !h.foundBy.includes("tavily")));
   }));
 
 test("a rate-limited engine is retried once", () =>
   withEnv(BOTH, async () => {
     stubFetch({ brave: "429-once", tavily: "ok" });
     const { provider } = await webSearch("photosynthesis");
-    assert.equal(provider, "brave+tavily");
+    assert.equal(provider, "brave+tavily+wikipedia");
+  }));
+
+test("ALEX_SEARCH_ENGINES restricts engines (Wikipedia then only a last resort)", () =>
+  withEnv({ ...BOTH, ALEX_SEARCH_ENGINES: "tavily,brave" }, async () => {
+    stubFetch({ brave: "ok", tavily: "ok" });
+    assert.equal((await webSearch("photosynthesis")).provider, "tavily+brave");
+    stubFetch({ brave: "500", tavily: "401" });
+    assert.equal((await webSearch("photosynthesis")).provider, "wikipedia (tavily, brave failed)");
   }));
 
 test("both engines down (or no keys) → Wikipedia as last resort", async () => {

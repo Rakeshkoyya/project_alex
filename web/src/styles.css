@@ -315,3 +315,17 @@ button.link.danger { color: var(--weak); font-size: 0.8rem; }
   .head-right { align-items: flex-start; }
   .user { font-size: 0.8rem; }
 }
+
+/* ---- research dossier */
+.bag .dossier { grid-column: 1 / -1; }
+.dossier .profile { background: var(--accent-soft); padding: 10px 14px; border-radius: 10px; }
+.dossier table.topics { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.dossier th, .dossier td { text-align: left; padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+.dossier .src { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
+.dossier .tag.foundation { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.dossier .warn { color: var(--weak); }
+.dossier .requests { padding-left: 1.1em; font-size: 0.9rem; }
+@media (max-width: 860px) {
+  .dossier table.topics th:nth-child(4), .dossier table.topics td:nth-child(4) { display: none; }
+  .dossier .src { max-width: 200px; }
+}

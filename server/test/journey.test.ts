@@ -36,6 +36,14 @@ test("student journey: goal → bag → diagnostic → ZPD roadmap → tutoring 
   assert.ok(s.bag.resources.some((r) => r.chunkCount > 0), "bag has ingested material");
   assert.ok(s.bag.keyPoints.length > 0 && s.bag.flashcards.length > 0, "points to remember + flashcards");
   assert.ok(s.concepts.some((k) => k.depth > 0) && s.concepts.some((k) => k.depth === 0), "map has targets and foundations");
+  // Research dossier: profile, plan, sources per topic, lecture notes, curriculum discussion.
+  assert.ok(s.research?.profile, "Advisor profiled the learner");
+  assert.ok(s.research!.topics.length >= 2, "Advisor planned research topics");
+  assert.ok(s.research!.topics.every((t) => t.status !== "planned"), "every topic was researched");
+  assert.ok(s.bag.resources.some((r) => r.kind === "notes"), "Librarian wrote lecture notes from its own knowledge");
+  assert.ok(s.research!.topics.filter((t) => t.notesId).length >= 1);
+  assert.ok(events.some((e) => e.type === "tool_start" && e.name === "coverage_report"), "Advisor checked coverage of the concept map");
+  assert.ok(s.activity.some((a) => a.role === "advisor" && a.text.startsWith("set_research_plan")), "faculty tool calls are logged to the course activity");
   const diag = s.assessments.find((a) => a.kind === "diagnostic")!;
   assert.ok(diag.questions.length >= s.concepts.length);
 

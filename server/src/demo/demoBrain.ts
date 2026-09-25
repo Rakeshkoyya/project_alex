@@ -64,6 +64,7 @@ function currentRun(messages: Msg[]): Run {
 
 function librarian(c: CourseState, run: Run): AssistantMessage {
   const has = (t: string) => run.called.has(t);
+  if (/PHASE: (synthesize|fill-gap)/.test(run.prompt)) return librarianSynthesize(c, run);
   if (/uploaded|summari[sz]e/i.test(run.prompt) && !has("summarize_resource")) {
     const mine = c.bag.resources.filter((r) => r.addedBy === "student" && r.chunkCount > 0);
     if (mine.length) {
@@ -117,12 +118,87 @@ function librarian(c: CourseState, run: Run): AssistantMessage {
   return say(`📚 Your bag is ready for **${c.title}**:\n\n${bag || "_(nothing found yet — upload a PDF or notes to add material)_"}\n\nI also saved ${c.bag.keyPoints.length} points to remember, each with a memory aid and a flashcard.`);
 }
 
+/** Demo synthesis: lecture notes per topic from the gathered passages, then verified points to remember. */
+function librarianSynthesize(c: CourseState, run: Run): AssistantMessage {
+  const has = (t: string) => run.called.has(t);
+  if (!has("get_research_report")) return tools(call("get_research_report", {}));
+  if (/PHASE: fill-gap/.test(run.prompt)) {
+    const concept = run.prompt.match(/concept "([^"]+)"/)?.[1] ?? c.title;
+    if (!has("write_lecture_notes")) return tools(call("write_lecture_notes", { topicId: concept, title: concept, markdown: demoNotes(c, concept) }));
+    return say(`Added lecture notes for **${concept}** built from the bag's sources.`);
+  }
+  const topics = (c.research?.topics ?? []).filter((t) => !t.notesId);
+  if (!has("write_lecture_notes") && topics.length) {
+    return tools(...topics.map((t) => call("write_lecture_notes", { topicId: t.id, title: t.title, markdown: demoNotes(c, t.title) })));
+  }
+  if (!has("verify_fact") && !has("add_key_point")) {
+    const facts = keyFacts(c);
+    if (facts.length) return tools(...facts.slice(0, 2).map((f) => call("verify_fact", { claim: f })));
+  }
+  if (!has("add_key_point")) {
+    const facts = keyFacts(c);
+    if (facts.length) {
+      return tools(
+        ...facts.map((s) => {
+          const cl = makeCloze(s);
+          const ac = acronym(s);
+          return call("add_key_point", { text: s, technique: ac ? "mnemonic" : "visual-association", aid: ac ?? `Picture the idea as a vivid, exaggerated scene: ${s.slice(0, 80)}…`, front: cl ? cl.prompt : `Explain: ${s.slice(0, 60)}…`, back: cl ? cl.term : s });
+        }),
+      );
+    }
+  }
+  const counts = { web: c.bag.resources.filter((r) => r.kind === "web").length, vault: c.bag.resources.filter((r) => r.kind === "vault").length, notes: c.bag.resources.filter((r) => r.kind === "notes").length };
+  return say(`📚 Your bag is ready for **${c.title}**: ${counts.vault} trusted primer(s), ${counts.web} web source(s) and ${counts.notes} set(s) of lecture notes, plus ${c.bag.keyPoints.length} cross-checked points to remember.`);
+}
+
+/** Bag search over gathered SOURCES only (the demo's own notes are too generic to quiz from). */
+function searchSources(c: CourseState, q: string, k: number) {
+  return searchBag(app.store!, c.id, q, k * 4 + 10).filter((h) => !h.resource.startsWith("Lecture notes")).slice(0, k);
+}
+
+function keyFacts(c: CourseState) {
+  const hits = searchSources(c, `${c.title} ${c.goal}`, 8);
+  return hits.flatMap((h) => sentences(h.text).filter((s) => / (is|are|means|contains?) /.test(s)).slice(0, 1)).slice(0, 4);
+}
+
+function demoNotes(c: CourseState, topic: string) {
+  const hits = searchSources(c, topic, 3);
+  const lines = hits.flatMap((h) => sentences(h.text)).slice(0, 5);
+  const level = c.research?.profile?.level ?? "your level";
+  return [
+    `## ${topic}, explained for ${level}`,
+    lines.length ? lines.join(" ") : `${topic} is part of ${c.title}. (Demo mode writes notes from the gathered sources; with a real model these are full lecture notes.)`,
+    `## Key idea`,
+    lines[0] ?? `The central idea of ${topic}.`,
+    `## Common misconception`,
+    `Students often memorise the words of ${topic} without being able to explain why it works: explain it back in your own words.`,
+  ].join("\n\n");
+}
+
 // ============================================================== advisor
 
 function advisor(c: CourseState, run: Run): AssistantMessage {
   if (!run.called.has("get_course_brief")) return tools(call("get_course_brief", {}));
+  if (/PHASE: scope/.test(run.prompt)) {
+    if (!run.called.has("set_learner_profile")) {
+      const lvl = c.currentLevel ?? c.goal.match(/grade \d+|beginner|university|college|high school/i)?.[0] ?? "beginner";
+      return tools(
+        call("set_learner_profile", { level: lvl, audience: /grade|school/i.test(lvl) ? "for high school students" : "for beginners", depth: "standard", assumedKnowledge: [], suspectedGaps: ["core vocabulary"], notes: "Start concrete, check understanding often." }),
+        call("set_research_plan", { topics: demoTopics(c) }),
+      );
+    }
+    return say(`I've profiled you and planned research on **${c.research?.topics.length ?? 0} topics**, foundations first. The Librarian is gathering material now.`);
+  }
   if (/PHASE: map/.test(run.prompt)) {
     if (!run.called.has("set_concept_map")) return tools(call("set_concept_map", { concepts: deriveConcepts(c) }));
+    if (!run.called.has("coverage_report")) return tools(call("coverage_report", {}));
+    if (!run.called.has("request_material")) {
+      let gaps: { title: string; status: string }[] = [];
+      try {
+        gaps = JSON.parse(run.called.get("coverage_report")!.at(-1)!).filter((x: any) => x.status === "GAP");
+      } catch {}
+      if (gaps.length) return tools(call("request_material", { concept: gaps[0].title, need: "An explanation at the student's level" }));
+    }
     return say(`I've mapped **${c.concepts.length} concepts** for ${c.title}, including the foundations underneath them. Next, a short diagnostic so we know where your solid ground is.`);
   }
   if (!run.called.has("set_roadmap")) return tools(call("set_roadmap", deriveRoadmap(c)));
@@ -130,8 +206,24 @@ function advisor(c: CourseState, run: Run): AssistantMessage {
   return say(`🗺️ Your roadmap is ready: **${r.title}** — ${r.modules.length} modules over ${r.totalDays} days.\n\n${r.rationale}\n\nHead to **Study** whenever you're ready; your tutor will propose today's plan.`);
 }
 
+function demoTopics(c: CourseState) {
+  // Use a matching vault primer's outline when there is one, else a generic outline.
+  const primer = app.vault!.search(`${c.title} ${c.goal}`, 3).find((e) => e.primer);
+  const heads = primer ? [...(app.vault!.primerText(primer) ?? "").matchAll(/^## (.+)$/gm)].map((m) => m[1]) : [];
+  const list = heads.length
+    ? heads.slice(0, 8).map((h) => ({ title: h.replace(/^foundations?:\s*/i, ""), kind: /^foundations?:/i.test(h) ? "foundation" : "core" }))
+    : [
+        { title: `Core vocabulary of ${c.title}`, kind: "foundation" },
+        { title: `Key principles of ${c.title}`, kind: "core" },
+        { title: `Applying ${c.title}`, kind: "core" },
+      ];
+  return list.map((t) => ({ ...t, queries: [`${t.title} explained`, `${t.title} ${c.title}`] }));
+}
+
 function deriveConcepts(c: CourseState) {
-  const chunks = app.store!.getChunks(c.id);
+  // Concepts come from the gathered sources' structure (not from AI-written notes).
+  const sourceIds = new Set(c.bag.resources.filter((r) => r.kind !== "notes").map((r) => r.id));
+  const chunks = app.store!.getChunks(c.id).filter((k) => sourceIds.has(k.resourceId));
   const headings: { title: string; foundation: boolean }[] = [];
   const seen = new Set<string>();
   for (const k of chunks) {
@@ -246,7 +338,8 @@ function editorial(c: CourseState, run: Run): AssistantMessage {
 
 function buildQuestions(c: CourseState, concepts: Concept[], max: number) {
   // Distractors are other key terms from the same material: plausible, not random.
-  const pool = [...new Set(app.store!.getChunks(c.id).flatMap((k) => sentences(k.text).map((s) => keyTerm(s)).filter((t): t is string => !!t)))];
+  const notesIds = new Set(c.bag.resources.filter((r) => r.kind === "notes").map((r) => r.id));
+  const pool = [...new Set(app.store!.getChunks(c.id).filter((k) => !notesIds.has(k.resourceId)).flatMap((k) => sentences(k.text).map((s) => keyTerm(s)).filter((t): t is string => !!t)))];
   const out: any[] = [];
   const used = new Set<string>();
   for (let round = 0; round < 2 && out.length < max; round++) {
@@ -271,13 +364,13 @@ function buildQuestions(c: CourseState, concepts: Concept[], max: number) {
     }
   }
   const main = concepts.find((k) => k.depth === 0) ?? concepts[0];
-  const s = sentences(searchBag(app.store!, c.id, main.title, 1)[0]?.text ?? "")[0];
+  const s = sentences(searchSources(c, main.title, 1)[0]?.text ?? "")[0];
   if (s && out.length < max + 1) out.push({ conceptId: main.id, type: "short", prompt: `Explain why this is true, in your own words: "${s}"`, answer: s, rubric: s, difficulty: 3, bloom: "understand" });
   return out;
 }
 
 function clozeFor(c: CourseState, k: Concept, used: Set<string>, nth = 0): Cloze | undefined {
-  const hits = searchBag(app.store!, c.id, `${k.title} ${k.description}`, 3);
+  const hits = searchSources(c, `${k.title} ${k.description}`, 3);
   const cands = hits.flatMap((h) => sentences(h.text)).filter((s) => !used.has(s));
   for (const s of cands.slice(nth)) {
     const cl = makeCloze(s);
@@ -367,7 +460,7 @@ function tutor(c: CourseState, run: Run): AssistantMessage {
 }
 
 function explainAndAsk(c: CourseState, memo: TutorMemo, k: Concept, lead: string, hintLevel = 0): AssistantMessage {
-  const hits = searchBag(app.store!, c.id, `${k.title} ${k.description}`, 2);
+  const hits = searchSources(c, `${k.title} ${k.description}`, 2);
   const sents = hits.flatMap((h) => sentences(h.text));
   const explain = sents.slice(0, 2).join(" ");
   const cloze = sents.map((x) => (memo.used.has(x) ? undefined : makeCloze(x))).find(Boolean);

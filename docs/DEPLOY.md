@@ -12,7 +12,7 @@ By default the site is **open to everyone with no login**. Each visitor's browse
 | `BRAVE_API_KEY` | https://api-dashboard.search.brave.com/register → create a **Free AI** subscription → **API Keys** → create key (a card is needed to sign up; the free tier isn't charged) | **Recommended.** Web search engine #1. |
 | `TAVILY_API_KEY` | https://app.tavily.com → sign up → copy the API key (`tvly-…`) from the dashboard (free tier: 1,000 credits/month) | **Recommended.** Web search engine #2. |
 
-With both keys set, every search runs on **both engines in parallel**. Results are merged and de-duplicated, and each is tagged with the engines that found it, so pages both engines agree on rank first. The Librarian's `verify_fact` tool cross-checks every fact it saves against several independent sources. If one engine fails (quota, outage, bad key), the other carries on automatically. If both fail, Wikipedia is the last resort.
+With both keys set, every search runs on **Brave, Tavily and Wikipedia in parallel** (Wikipedia needs no key). Results are merged and de-duplicated, and each is tagged with the engines that found it, so pages both engines agree on rank first. The Librarian's `verify_fact` tool cross-checks every fact it saves against several independent sources. If one engine fails (quota, outage, bad key), the other carries on automatically. If both keyed engines fail, Wikipedia still answers.
 
 ## 2. Create the application
 
@@ -38,6 +38,8 @@ ALEX_MODEL_ADVISOR=deepseek/deepseek-v4-pro   # a stronger model for one role
 ALEX_THINKING=off                             # off | low | medium | high (off is fastest and cheapest)
 ALEX_MAX_OUTPUT_TOKENS=16000
 ALEX_TAVILY_DEPTH=advanced                    # deeper Tavily results (2 credits per search instead of 1)
+ALEX_RESEARCH_MAX_PAGES=14                    # web pages read into each new course's bag
+ALEX_RESEARCH_PER_TOPIC=2                     # web pages per research topic
 ALEX_REQUIRE_LOGIN=true                       # switch to username/password accounts instead of open access
 ```
 
@@ -67,20 +69,20 @@ Without this, every redeploy wipes all courses.
 Click **Deploy**. The first build takes a few minutes: it compiles the vendored Pi agent and builds the web UI. When it's running, the log shows:
 
 ```
-Project Alex on http://localhost:8787 — openrouter · deepseek/deepseek-v4-flash · search: brave+tavily · open access · data /data
+Project Alex on http://localhost:8787 — openrouter · deepseek/deepseek-v4-flash · search: brave+tavily+wikipedia · open access · data /data
 ```
 
 Open `https://alex.yourdomain.com`. You land straight on "What do you want to learn?".
 
 - The badge top-right should read **Live · deepseek/deepseek-v4-flash**.
-- `https://alex.yourdomain.com/api/status` shows `"search": "brave+tavily"` when both search keys are picked up.
+- `https://alex.yourdomain.com/api/status` shows `"search": "brave+tavily+wikipedia"` when both search keys are picked up (Wikipedia needs no key).
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | Badge says **Demo mode** | `OPENROUTER_API_KEY` is missing or misspelled. Fix it and redeploy. |
-| `/api/status` shows `"search": "brave"` or `"tavily"` only | The other key isn't set. Search still works, with one engine. |
+| `/api/status` shows `"search": "brave+wikipedia"` or `"tavily+wikipedia"` | The other key isn't set. Search still works, with one keyed engine plus Wikipedia. |
 | `/api/status` shows `"search": "wikipedia"` | Neither search key is set. Only Wikipedia is searched. |
 | The Librarian's activity shows `brave failed (…)` or `tavily failed (…)` | That engine errored (quota, outage or bad key) and the other one was used. Check that engine's dashboard for quota or key problems. |
 | An agent step fails with `401` or `402` | Bad OpenRouter key or no credit. Fix it, then click **Resume** on the course. |

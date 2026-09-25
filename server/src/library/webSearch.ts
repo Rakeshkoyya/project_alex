@@ -14,16 +14,16 @@ import { tokenize } from "./bm25.js";
  * runs that skill as shell scripts; Alex's agents have no shell, so the logic
  * runs here as native tools.
  *
- * Search runs every configured engine IN PARALLEL and fuses the results:
+ * Search runs every available engine IN PARALLEL and fuses the results:
  *   BRAVE_API_KEY   Brave Search (what Pi uses)
  *   TAVILY_API_KEY  Tavily
+ *   Wikipedia       always on (no key): the encyclopedic anchor
  * Results are de-duplicated by URL, tagged with the engines that found them,
- * and ranked with reciprocal-rank fusion, so pages both engines agree on rise
- * to the top: a cheap first cross-check. If one engine fails (quota, outage,
- * bad key), the other's results are used; if all fail or none is configured,
- * Wikipedia's public API is the last resort.
+ * and ranked with reciprocal-rank fusion, so pages several engines agree on
+ * rise to the top: a cheap first cross-check. If an engine fails (quota,
+ * outage, bad key), the others carry on.
  *
- *   ALEX_SEARCH_ENGINES   comma list to restrict/order engines, e.g. "tavily,brave"
+ *   ALEX_SEARCH_ENGINES   comma list to restrict/order engines (default "brave,tavily,wikipedia")
  *   ALEX_TAVILY_DEPTH     basic (default) | advanced
  */
 
@@ -46,6 +46,8 @@ export interface SearchOptions {
   country?: string; // two-letter code, default US (Brave)
   /** Fetch each result and include its readable content as markdown. */
   includeContent?: boolean;
+  /** Per-engine query override (e.g. a short title for Wikipedia, which matches long queries poorly). */
+  engineQueries?: Partial<Record<EngineName, string>>;
 }
 
 export type EngineName = "brave" | "tavily" | "wikipedia";
@@ -65,17 +67,16 @@ export interface SearchResult {
   provider: string;
 }
 
-/** Keyed engines that are configured, in preference order. */
+/** Engines that are available (keyed ones need their key), in preference order. */
 export function configuredEngines(): EngineName[] {
-  const has: Record<string, boolean> = { brave: !!process.env.BRAVE_API_KEY, tavily: !!process.env.TAVILY_API_KEY };
-  const order = (process.env.ALEX_SEARCH_ENGINES ?? "brave,tavily").split(",").map((x) => x.trim().toLowerCase());
-  return order.filter((e): e is EngineName => (e === "brave" || e === "tavily") && has[e]);
+  const has: Record<string, boolean> = { brave: !!process.env.BRAVE_API_KEY, tavily: !!process.env.TAVILY_API_KEY, wikipedia: true };
+  const order = (process.env.ALEX_SEARCH_ENGINES ?? "brave,tavily,wikipedia").split(",").map((x) => x.trim().toLowerCase());
+  return [...new Set(order)].filter((e): e is EngineName => (e === "brave" || e === "tavily" || e === "wikipedia") && has[e]);
 }
 
-/** Short label for status/logging: "brave+tavily", "tavily" or "wikipedia". */
+/** Short label for status/logging, e.g. "brave+tavily+wikipedia". */
 export function searchProvider(): string {
-  const e = configuredEngines();
-  return e.length ? e.join("+") : "wikipedia";
+  return configuredEngines().join("+") || "none";
 }
 
 const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -97,8 +98,9 @@ const ENGINES: Record<EngineName, (q: string, n: number, o: SearchOptions) => Pr
 export async function webSearch(query: string, opts: SearchOptions = {}): Promise<SearchResult> {
   const count = Math.max(1, Math.min(20, opts.count ?? 5));
   const engines = configuredEngines();
-  const runs = await Promise.all(engines.map((e) => runEngine(e, query, count, opts)));
-  if (!runs.some((r) => r.report.ok && r.hits.length)) runs.push(await runEngine("wikipedia", query, count, opts));
+  const runs = await Promise.all(engines.map((e) => runEngine(e, opts.engineQueries?.[e] ?? query, count, opts)));
+  // Last resort if every configured engine failed and Wikipedia wasn't among them.
+  if (!engines.includes("wikipedia") && !runs.some((r) => r.report.ok && r.hits.length)) runs.push(await runEngine("wikipedia", opts.engineQueries?.wikipedia ?? query, count, opts));
 
   const hits = fuse(runs.filter((r) => r.report.ok).map((r) => ({ engine: r.report.engine, hits: r.hits }))).slice(0, count);
   if (opts.includeContent) await attachContent(hits);

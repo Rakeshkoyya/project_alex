@@ -8,7 +8,7 @@ import { bm25Search } from "./bm25.js";
 export function ingestResource(
   store: Store,
   courseId: string,
-  r: { title: string; kind: ResourceKind; source?: string; text: string; summary?: string; addedBy: Resource["addedBy"] },
+  r: { title: string; kind: ResourceKind; source?: string; text: string; summary?: string; addedBy: Resource["addedBy"]; topicId?: string; foundBy?: string[]; quality?: number },
 ): Resource {
   const course = store.getCourse(courseId);
   const dup = course.bag.resources.find((x) => (r.source && x.source === r.source) || x.title === r.title);
@@ -23,6 +23,9 @@ export function ingestResource(
     source: r.source,
     summary: r.summary ?? r.text.slice(0, 220).replace(/\s+/g, " ") + (r.text.length > 220 ? "…" : ""),
     addedBy: r.addedBy,
+    ...(r.topicId ? { topicId: r.topicId } : {}),
+    ...(r.foundBy ? { foundBy: r.foundBy } : {}),
+    ...(r.quality !== undefined ? { quality: r.quality } : {}),
     chunkCount: chunks.length,
     addedAt: now(),
   };

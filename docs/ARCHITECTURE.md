@@ -56,11 +56,13 @@ The Generations engine will need changes inside Pi itself (asset planners, rende
 | Stage | Who | What happens |
 |---|---|---|
 | `intake` | student | Types a goal and/or uploads PDFs or notes. Optionally gives a deadline, current level and hours per week. Uploads are ingested right away (text extraction → section-aware chunks → BM25 index). |
-| `gathering` | Librarian | Searches the curated vault, then the web (Tavily, Brave, or Wikipedia as fallback), ingests good sources, summarizes the student's uploads, and extracts points to remember with memory aids and flashcards. |
-| | Advisor | `PHASE: map` builds the concept graph: target concepts plus the foundations beneath them. |
+| `gathering` | Advisor | **Scope**: `set_learner_profile` (level, depth, assumed knowledge, suspected gaps) and `set_research_plan` (5–12 core and foundation topics with level-aware queries). |
+| | code | **Research** (`library/research.ts`): every topic, in parallel, on the vault plus Brave + Tavily + Wikipedia. Candidates are scored by `sourceQuality` (authority tier × cross-engine agreement × rank, minus penalties for forums, answer farms and unreadable sites). The best pages are read with Readability and ingested, within limits per topic (2), per domain (3) and in total (14). |
+| | Librarian | **Synthesize**: fills weak topics with its own searches, writes `write_lecture_notes` for every topic from the model's knowledge (pitched at the profile, checked against the sources), summarizes uploads, and saves points to remember only after `verify_fact`. |
+| | Advisor ↔ Librarian | **Curriculum**: `set_concept_map`, then `coverage_report` (BM25 evidence per concept: well covered, thin or GAP), then `request_material` for important gaps (the Librarian researches and writes notes, then replies), then the final map. |
 | | Editorial | Writes the diagnostic, covering every concept including the foundations. |
 | `assessment` | student | Takes the diagnostic. |
-| `planning` | Editorial → Advisor | Auto-grades objective items and has Editorial grade open ones. Mastery priors are set per concept. `PHASE: roadmap` then orders modules from the weakest foundation upward, fits them to the deadline and hours per week, and adds objectives, exercises, memory techniques and checkpoints. |
+| `planning` | Editorial → Advisor | Auto-grades objective items and has Editorial grade open ones. Mastery priors are set per concept. `PHASE: roadmap` revises the concept map to the student's actual knowledge (adding missing foundations and compressing solid areas, requesting material if needed), then orders modules from the weakest foundation upward, fits them to the deadline and hours per week, and adds objectives, exercises, memory techniques and checkpoints. |
 | `active` | Tutor | Each session: plan (due reviews → frontier concept → practice → challenge → quiz). Then teach, with `record_attempt` after every answer and the ZPD engine's move followed. Then diary entry and a lock-in quiz written by Editorial. Quiz results update mastery and advance modules. |
 | `completed` | | Every module is mastered. |
 
@@ -68,7 +70,7 @@ The Generations engine will need changes inside Pi itself (asset planners, rende
 
 Each course lives in `data/students/<student>/courses/<course>/`:
 
-* `course.json` holds the full `CourseState` (bag, concepts, roadmap, assessments, sessions, diary, activity, and the index of Pi session threads).
+* `course.json` holds the full `CourseState` (bag, the research dossier (profile, topics, sources, requests), concepts, roadmap, assessments, sessions, diary, activity, and the index of Pi session threads).
 * `pi-sessions/` holds the durable Pi JSONL sessions, one per faculty thread.
 * `chunks.json` holds the ingested passages.
 * `roadmap.md`, `notes.md` and `diary.md` are human-readable system files, regenerated on every change.

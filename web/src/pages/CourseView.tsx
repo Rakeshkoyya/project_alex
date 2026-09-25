@@ -126,7 +126,7 @@ export function CourseView({ id, tab }: { id: string; tab?: string }) {
       {active === "prepare" && (
         <section className="panel">
           <h2>Your faculty is preparing the course</h2>
-          <p className="muted">The Librarian fills your bag, the Advisor maps the concepts (including the foundations underneath), and the Editorial board writes a diagnostic so we can find your Zone of Proximal Development.</p>
+          <p className="muted">The Advisor profiles your level and plans the research. The Librarian searches Brave, Tavily and Wikipedia for every topic, keeps the most authoritative sources, and writes lecture notes pitched at your level, cross-checking the key facts. The Advisor then maps the curriculum, checks it against the material and asks for anything missing. Finally, the Editorial board writes a diagnostic to find your Zone of Proximal Development.</p>
           {feed.length ? <FacultyFeed blocks={feed} /> : <p className="muted">{busy ? "Starting…" : course.stage === "intake" ? "Queued…" : "Preparation finished — see the Diagnostic tab."}</p>}
           {!busy && course.stage === "assessment" && <button className="primary" onClick={() => go(`/course/${id}/diagnostic`)}>Take the diagnostic →</button>}
         </section>

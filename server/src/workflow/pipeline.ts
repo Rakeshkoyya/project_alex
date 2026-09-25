@@ -4,6 +4,7 @@ import { newId, now } from "../store/store.js";
 import type { CourseState, StudySession } from "../store/types.js";
 import { fileToText } from "../library/ingest.js";
 import { ingestResource } from "../library/service.js";
+import { researchCourse } from "../library/research.js";
 import { autoGrade, finalizeAssessment, needsHumanlikeGrading } from "../learning/grading.js";
 import { MASTERY_THRESHOLD } from "../learning/bkt.js";
 
@@ -73,24 +74,60 @@ export async function ingestUploads(courseId: string, files: UploadedFile[]) {
   return out;
 }
 
-/** Steps 1–3: gather material, map concepts, write the diagnostic. */
+/**
+ * Steps 1–3: scope → research → synthesize → curriculum → diagnostic.
+ *
+ *  1. SCOPE       Advisor profiles the learner and writes a research plan
+ *                 (core topics + foundations, level-aware queries).
+ *  2. RESEARCH    code: every topic on vault + Brave + Tavily + Wikipedia in
+ *                 parallel, candidates scored for authority/agreement, best
+ *                 pages read and ingested with per-topic/domain/total limits.
+ *  3. SYNTHESIZE  Librarian fills weak topics, writes level-pitched lecture
+ *                 notes from the model's own knowledge (checked against the
+ *                 sources) and verified points to remember.
+ *  4. CURRICULUM  Advisor drafts the concept map, checks coverage against the
+ *                 bag and asks the Librarian to fill gaps (a real back-and-forth).
+ *  5. DIAGNOSTIC  Editorial tests targets and foundations.
+ */
 export async function prepareCourse(courseId: string, emit: Emit) {
   const store = app.store!;
   const c = store.getCourse(courseId);
   const uploaded = c.bag.resources.filter((r) => r.addedBy === "student");
-
   stage(courseId, "gathering", emit);
+
+  // 1. scope
+  if (!c.research?.topics.length) {
+    await run(
+      "advisor",
+      courseId,
+      `PHASE: scope. A new student enrolled. Goal: "${c.goal}". Self-described level: ${c.currentLevel ?? "not stated"}.${uploaded.length ? ` They uploaded: ${uploaded.map((r) => `"${r.title}"`).join(", ")}.` : ""} Read the course brief, then set_learner_profile and set_research_plan. Do not draft the concept map yet.`,
+      emit,
+      "advisor",
+    );
+    if (!store.getCourse(courseId).research?.topics.length) {
+      // The model skipped the plan: research the goal itself rather than stopping.
+      store.update(courseId, (course) => {
+        course.research ??= { topics: [], requests: [], startedAt: now() };
+        course.research.topics = [{ id: newId("topic"), title: course.title, kind: "core", queries: [course.goal.slice(0, 120)], status: "planned", resourceIds: [] }];
+      });
+    }
+  }
+
+  // 2. research (code, parallel)
+  await researchCourse(store, app.vault!, courseId, emit);
+
+  // 3. synthesize
   await run(
     "librarian",
     courseId,
-    uploaded.length
-      ? `The student uploaded their own material: ${uploaded.map((r) => `"${r.title}" (${r.id})`).join(", ")}. Summarize each uploaded resource, then add complementary sources (especially foundations) from the vault/web, and extract points to remember.`
-      : `The student described what they want to learn: "${c.goal}" (self-described level: ${c.currentLevel ?? "unknown"}). Find and ingest the best material, then extract points to remember.`,
+    `PHASE: synthesize. Automatic research is done (see the dossier). Fill topics with weak or no sources, write lecture notes for every topic, ${uploaded.length ? `summarize the student's uploads (${uploaded.map((r) => `"${r.title}" ${r.id}`).join(", ")}), ` : ""}and save cross-verified points to remember.`,
     emit,
     "librarian",
   );
 
-  await run("advisor", courseId, "PHASE: map. Build the concept map for this course (targets + foundations) with set_concept_map. Do not publish a roadmap yet — the diagnostic comes first.", emit, "advisor");
+  // 4. curriculum
+  store.update(courseId, (course) => course.research && (course.research.windowStart = now()));
+  await run("advisor", courseId, "PHASE: map. The bag is ready. Draft the concept map (targets + foundations) with set_concept_map, check coverage_report, request_material for important gaps, then finalise the map. Do not publish a roadmap yet: the diagnostic comes first.", emit, "advisor");
 
   if (!store.getCourse(courseId).concepts.length) throw new Error("The Advisor finished without a concept map — press Resume to try again.");
 
@@ -146,7 +183,14 @@ export async function submitAssessment(courseId: string, assessmentId: string, r
 
 /** Step 4: the Advisor publishes the roadmap from the graded diagnostic. */
 export async function planRoadmap(courseId: string, emit: Emit) {
-  await run("advisor", courseId, "PHASE: roadmap. The diagnostic is graded. Read the course brief and publish the personalized ZPD roadmap with set_roadmap.", emit, "advisor");
+  app.store!.update(courseId, (course) => course.research && (course.research.windowStart = now()));
+  await run(
+    "advisor",
+    courseId,
+    "PHASE: roadmap. The diagnostic is graded. Read the course brief (per-concept scores), revise the concept map to fit what this student actually knows (add missing foundations, compress what is solid, request_material for anything new), then publish the personalized ZPD roadmap with set_roadmap.",
+    emit,
+    "advisor",
+  );
   if (!app.store!.getCourse(courseId).roadmap) throw new Error("The Advisor finished without publishing a roadmap — try again.");
   stage(courseId, "active", emit);
 }

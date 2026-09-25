@@ -19,8 +19,8 @@ data/vault/              curated resource catalogue + full-text primers
 
 | Role | Responsibility |
 |---|---|
-| 📚 **Librarian** | Collects material from the curated resource vault, the web, and whatever you upload. Ingests and indexes it into your **student bag**, and extracts points to remember with memory aids and flashcards. |
-| 🧭 **Advisor** | Plays the syllabus committee. Maps the concepts, including the foundations underneath them, and after the diagnostic designs a personalized roadmap and timeline that fits your deadline and hours per week. |
+| 📚 **Librarian** | Builds your **student bag** from four kinds of knowledge: the curated vault, the web (Brave + Tavily + Wikipedia, quality-ranked), your uploads, and its own knowledge written up as level-pitched lecture notes. It cross-verifies every fact it saves. |
+| 🧭 **Advisor** | Plays the syllabus committee. Profiles your level, plans the research, maps the concepts (foundations included), checks the map against the material and asks the Librarian to fill gaps. After the diagnostic it revises the curriculum and designs a roadmap that fits your deadline and hours per week. |
 | 🎓 **Tutor** | Teaches you live. Proposes today's plan, activates what you already know, teaches one concept at a time, and adjusts hints to how you're doing: nudge → hint → worked example → **step down** to missing basics. Keeps your diary and ends each session with a quiz. |
 | ⚖️ **Editorial** | An independent examiner. Writes the diagnostics and quizzes and grades them without bias: objective items are graded in code, open answers against a rubric. Keeps your exam record. |
 | 🎬 **Generations** | *Parked.* Will pre-generate images, animations, concept pages, mind maps, memory palaces and slide decks. The interface and UI slots are already in place. |
@@ -28,11 +28,12 @@ data/vault/              curated resource catalogue + full-text primers
 ## The journey
 
 1. **Goal**: type what you want to learn and/or drop in your PDFs and notes. A deadline is optional.
-2. **Material**: the Librarian fills your bag, and the Advisor maps the concepts.
-3. **Diagnostic**: Editorial tests the targets *and* their foundations.
-4. **Roadmap**: the Advisor connects what you already know to the goal, and the weakest foundations come first.
-5. **Daily sessions**: review what's due, then learn the next concept on your frontier, then practice with scaffolding, then take on a challenge.
-6. **Lock in**: every session ends with a quiz, the results update your mastery, and modules advance until you finish the course.
+2. **Research**: the Advisor profiles your level and plans research topics, foundations included. For every topic, Brave, Tavily and Wikipedia are searched in parallel alongside the curated vault, and the most authoritative sources are read into your bag. The Librarian then writes lecture notes from the model's own knowledge, pitched at your level and checked against those sources, and saves cross-verified points to remember.
+3. **Curriculum**: the Advisor maps the concepts, checks each one against the material, and asks the Librarian to fill any gaps.
+4. **Diagnostic**: Editorial tests the targets *and* their foundations.
+5. **Roadmap**: the Advisor revises the curriculum to fit what you actually know, then plans modules from your weakest foundation upward.
+6. **Daily sessions**: review what's due, then learn the next concept on your frontier, then practice with scaffolding, then take on a challenge.
+7. **Lock in**: every session ends with a quiz, the results update your mastery, and modules advance until you finish the course.
 
 ## Screens
 
