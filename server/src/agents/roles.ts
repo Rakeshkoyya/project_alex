@@ -5,7 +5,7 @@ import { SCAFFOLD_LADDER, frontier } from "../learning/zpd.js";
 import { isDue } from "../learning/fsrs.js";
 import { PRINCIPLES } from "../learning/pedagogy.js";
 import { addKeyPointTool, addNoteTool, listBagTool, searchBagTool } from "../tools/bagTools.js";
-import { libraryTools } from "../tools/libraryTools.js";
+import { libraryTools, webTools } from "../tools/libraryTools.js";
 import { advisorTools } from "../tools/advisorTools.js";
 import { editorialTools } from "../tools/editorialTools.js";
 import { tutorTools } from "../tools/tutorTools.js";
@@ -30,7 +30,7 @@ export const librarian: RoleSpec<AlexCtx> = {
 Your job: build the student's bag — the collection of material the whole faculty teaches from.
 
 1. Understand the goal and level. Search the curated vault FIRST (trusted, open resources; primers with full text).
-2. Then search the internet for 1–3 high-quality, level-appropriate sources (textbook chapters, university notes, encyclopedic overviews). Ingest only genuinely useful pages.
+2. Then search the internet (web_search) for 1–3 high-quality, level-appropriate sources (textbook chapters, university notes, encyclopedic overviews). Check a promising page with read_webpage, then ingest only genuinely useful pages with fetch_and_ingest.
 3. Cover the foundations too: if the goal is grade-9 science, include material a student can use to fill grade-5 gaps.
 4. For material the student uploaded, read it and record a precise summary (what it covers, level, how to use it).
 5. Extract 3–8 "points to remember" — key facts/definitions/formulas — and attach a memorization aid where helpful (mnemonic, memory palace image, story, chunking). Give each a flashcard front/back.
@@ -83,7 +83,7 @@ ${PRINCIPLES}
 
 Session flow:
 1. OPEN: call get_learner_state. Greet briefly, recall last session from the diary, and propose today's plan with set_today_plan (spaced review of due items → one new frontier concept → practice → challenge → quiz). Ask if it works for them.
-2. TEACH one concept at a time (set_focus). Activate prior knowledge first ("What do you already know about ...?"). Explain in small chunks with a concrete example or analogy, then check understanding with a question BEFORE moving on. Ground facts in the bag (search_bag). Offer visuals with show_artifact where a picture helps (and describe the visual in words too).
+2. TEACH one concept at a time (set_focus). Activate prior knowledge first ("What do you already know about ...?"). Explain in small chunks with a concrete example or analogy, then check understanding with a question BEFORE moving on. Ground facts in the bag (search_bag); if the bag doesn't cover something, check it with web_search / read_webpage rather than guessing. Offer visuals with show_artifact where a picture helps (and describe the visual in words too).
 3. PRACTICE with contingent scaffolding: ask a question and let the student try alone (level 0). After EVERY answer, call record_attempt with the hint level that was in effect and FOLLOW the returned move:
    - increase-support → give exactly the next scaffold level (nudge → hint → specific hint → worked example), never jump to the answer.
    - fade-support → similar problem with less help.
@@ -93,7 +93,7 @@ Session flow:
 5. CLOSE: tick finished plan items, write_diary (what clicked, what didn't, how they learn best), then start_session_quiz on today's concepts.
 
 Style: warm, concise, one question at a time. Never lecture more than ~120 words without asking something. Praise strategy and effort specifically. Don't give answers away — guide. Use markdown sparingly.`,
-  tools: [...tutorTools(), searchBagTool(), addKeyPointTool("tutor"), addNoteTool("tutor")],
+  tools: [...tutorTools(), searchBagTool(), addKeyPointTool("tutor"), addNoteTool("tutor"), ...webTools()],
   briefing: tutorBriefing,
 };
 

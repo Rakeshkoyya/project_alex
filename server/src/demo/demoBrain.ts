@@ -90,8 +90,8 @@ function librarian(c: CourseState, run: Run): AssistantMessage {
   }
   if (has("web_search") && !has("fetch_and_ingest") && !has("add_key_point")) {
     const res = run.called.get("web_search")![0];
-    const url = res.match(/"url":\s*"([^"]+)"/)?.[1];
-    const title = res.match(/"title":\s*"([^"]+)"/)?.[1];
+    const url = res.match(/^Link: (\S+)/m)?.[1];
+    const title = res.match(/^Title: (.+)$/m)?.[1];
     if (url && title) return tools(call("fetch_and_ingest", { url, title, summary: "Encyclopedic overview found by web search." }));
   }
   if (!has("add_key_point")) {

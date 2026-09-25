@@ -1,101 +1,97 @@
 # Deploying Project Alex on Dokploy
 
-Alex ships as **one container**: the Node server serves both the API and the built web UI on port `8787`. All student data (accounts, courses, Pi session files) lives in `/data`, so that path must be a persistent volume.
+Alex ships as **one container**. The Node server serves the API and the built web UI together on port `8787`. All student data lives in `/data`, so that path must be a persistent volume.
 
-## 1. Before you start
+By default the site is **open to everyone with no login**. Each visitor's browser gets its own private set of courses through an anonymous cookie. There's nothing to configure for this, and no secret to generate.
 
-You need:
+## 1. Get your keys
 
-- A Dokploy server with a domain pointing at it (an `A` record, e.g. `alex.example.com` → server IP).
-- An **OpenRouter API key** from https://openrouter.ai/keys, with some credit on the account.
-- This repository in GitHub, connected to Dokploy (Settings → Git → GitHub).
-- A long random secret for login cookies. Generate one with `openssl rand -hex 32`.
+| Key | Where | Needed? |
+|---|---|---|
+| `OPENROUTER_API_KEY` | https://openrouter.ai/keys (add a few dollars of credit) | **Yes.** Every agent runs on it. |
+| `BRAVE_API_KEY` | https://api-dashboard.search.brave.com/register → create a **Free AI** subscription → **API Keys** → create key (a card is needed to sign up; the free tier isn't charged) | **Recommended.** This is how Pi searches the web. Without it the Librarian can only search Wikipedia. |
 
 ## 2. Create the application
 
 1. In Dokploy, open (or create) a **Project**, then **Create Service → Application**. Name it `alex`.
-2. Under **General → Provider**, choose **GitHub**, select the repository, pick the branch you merged into (e.g. `main`), and save.
-3. Under **Build Type**, choose **Dockerfile**:
-   - Dockerfile path: `Dockerfile`
-   - Docker context path: `.`
-   - Save.
+2. **General → Provider**: GitHub, this repository, and the branch you merged into (e.g. `main`). Save.
+3. **Build Type**: **Dockerfile**, with Dockerfile path `Dockerfile` and context `.`. Save.
 
 ## 3. Environment variables
 
-Open the **Environment** tab and paste the following, filling in your values:
+In the **Environment** tab, paste:
 
 ```env
 OPENROUTER_API_KEY=sk-or-v1-your-key
 ALEX_MODEL=deepseek/deepseek-v4-flash
-ALEX_SECRET=paste-the-output-of-openssl-rand-hex-32
-ALEX_ALLOW_SIGNUP=true
+BRAVE_API_KEY=your-brave-key
 ```
 
-Optional:
+That's all that's required. Optional extras:
 
 ```env
-TAVILY_API_KEY=...                      # better web search for the Librarian (falls back to Wikipedia)
-ALEX_MODEL_ADVISOR=deepseek/deepseek-v4-pro   # a stronger model for just one role
-ALEX_THINKING=off                       # off | low | medium | high reasoning (off is fastest)
+ALEX_MODEL_ADVISOR=deepseek/deepseek-v4-pro   # a stronger model for one role
+ALEX_THINKING=off                             # off | low | medium | high (off is fastest and cheapest)
 ALEX_MAX_OUTPUT_TOKENS=16000
+TAVILY_API_KEY=...                            # alternative to Brave
+ALEX_REQUIRE_LOGIN=true                       # switch to username/password accounts instead of open access
 ```
 
-Save. Never commit these values to git; `.env` is git-ignored.
+Save.
 
 ## 4. Persistent storage
 
-Open **Advanced → Volumes / Mounts → Add Volume**:
+Go to **Advanced → Volumes / Mounts → Add Volume** and set:
 
-- Type: **Volume** (a named Docker volume)
-- Volume name: `alex-data`
-- Mount path: `/data`
+- **Type:** Volume
+- **Name:** `alex-data`
+- **Mount path:** `/data`
 
-Without this, every redeploy wipes all accounts and courses.
+Without this, every redeploy wipes all courses.
 
 ## 5. Domain and HTTPS
 
-Open **Domains → Add Domain**:
+1. Point your domain at the server: a DNS `A` record, e.g. `alex.yourdomain.com` → your server's IP.
+2. In Dokploy, open **Domains → Add Domain** and set:
+   - **Host:** `alex.yourdomain.com`
+   - **Path:** `/`
+   - **Container Port:** `8787`
+   - **HTTPS:** on, with certificate **Let's Encrypt**
 
-- Host: `alex.example.com`
-- Path: `/`
-- Container port: **`8787`**
-- HTTPS: on, with certificate provider **Let's Encrypt**
+## 6. Deploy and check
 
-## 6. Deploy
-
-Click **Deploy** and watch the build log. The build runs `npm ci`, compiles the vendored Pi agent, builds the web UI and prunes dev dependencies. The first build takes a few minutes.
-
-The app is up when the log shows:
+Click **Deploy**. The first build takes a few minutes: it compiles the vendored Pi agent and builds the web UI. When it's running, the log shows:
 
 ```
-Project Alex on http://localhost:8787 — openrouter · deepseek/deepseek-v4-flash · Pi AgentHarness · data /data
+Project Alex on http://localhost:8787 — openrouter · deepseek/deepseek-v4-flash · search: brave · open access · data /data
 ```
 
-The container has a built-in health check on `/api/health`.
+Open `https://alex.yourdomain.com`. You land straight on "What do you want to learn?".
 
-## 7. First login
-
-1. Open `https://alex.example.com`, click **Create an account**, and register yourself.
-2. Optional: to stop strangers registering and spending your OpenRouter credit, set `ALEX_ALLOW_SIGNUP=false` in Environment and click **Redeploy**. Existing accounts keep working, and new ones can't be created.
-3. The badge top-right should read **Live · deepseek/deepseek-v4-flash**. If it says **Demo mode**, the server didn't see `OPENROUTER_API_KEY`.
+- The badge top-right should read **Live · deepseek/deepseek-v4-flash**.
+- `https://alex.yourdomain.com/api/status` shows `"search": "brave"` when your Brave key is picked up.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| Badge says *Demo mode* | `OPENROUTER_API_KEY` is missing or misspelled in Environment. Redeploy after fixing it. |
-| Build fails pulling `node:22-bookworm-slim` with a 429 | Docker Hub rate limit on your server. Run `docker login` on the server, or add the build arg `NODE_IMAGE=public.ecr.aws/docker/library/node:22-bookworm-slim`. |
-| Container exits with `Unknown openrouter model` | `ALEX_MODEL` isn't in Pi's OpenRouter catalogue. Use an id like `deepseek/deepseek-v4-flash` exactly. |
-| Faculty step shows an error such as `401` or `402` | Invalid key or no credit on OpenRouter. Fix it, then press **Resume** on the course. |
-| Everyone got logged out after a redeploy | `ALEX_SECRET` changed or isn't set. Keep it fixed. |
-| Courses disappeared after a redeploy | The `/data` volume isn't mounted (step 4). |
-| Long replies cut off mid-stream | Check that no extra proxy buffers responses. Alex sends keep-alive pings every 15 s and `X-Accel-Buffering: no`. |
+| Badge says **Demo mode** | `OPENROUTER_API_KEY` is missing or misspelled. Fix it and redeploy. |
+| `/api/status` shows `"search": "wikipedia"` | `BRAVE_API_KEY` isn't set. Search still works, but only on Wikipedia. |
+| An agent step fails with `401` or `402` | Bad OpenRouter key or no credit. Fix it, then click **Resume** on the course. |
+| Build fails pulling `node:22-bookworm-slim` (HTTP 429) | Docker Hub rate limit. Run `docker login` on the server, or add build arg `NODE_IMAGE=public.ecr.aws/docker/library/node:22-bookworm-slim`. |
+| Container exits: `Unknown openrouter model` | Check `ALEX_MODEL` spelling, e.g. `deepseek/deepseek-v4-flash`. |
+| Courses vanish after a redeploy | The `/data` volume isn't mounted (step 4). |
+| A student lost their courses | In open mode, courses belong to the browser. Clearing cookies or using another device starts fresh. Use `ALEX_REQUIRE_LOGIN=true` if students need accounts. |
+
+## About open access and cost
+
+In open mode anyone who finds the URL can use it, and every agent call is billed to your OpenRouter key. DeepSeek V4 Flash is very cheap, but it's still worth setting a **credit limit on the key** in OpenRouter (Keys → Edit → Limit) so there's a hard cap. If you ever want logins, set `ALEX_REQUIRE_LOGIN=true`. The cookie-signing secret is generated automatically, so there's still nothing to create by hand.
 
 ## Alternative: Docker Compose
 
-The repository also has `docker-compose.yml`. In Dokploy, choose **Create Service → Compose**, point it at the repo, set the same environment variables, and add the domain on service `alex`, port `8787`. The compose file already declares the `alex-data` volume.
+In Dokploy choose **Create Service → Compose**, point it at the repo (it uses `docker-compose.yml`), and set the same environment variables. Add the domain on service `alex`, port `8787`. The compose file already declares the `alex-data` volume.
 
-Locally: `cp .env.example .env`, fill it in, uncomment `ports` in `docker-compose.yml`, then run `docker compose up --build` and open http://localhost:8787.
+Locally: `cp .env.example .env`, fill in the keys, uncomment `ports` in `docker-compose.yml`, run `docker compose up --build`, then open http://localhost:8787.
 
 ## Backups
 

@@ -75,20 +75,30 @@ Each course lives in `data/students/<student>/courses/<course>/`:
 
 The resource vault is in `data/vault/`: `catalog.json` lists trusted open resources, and `primers/` holds full-text primers the tutor can teach from.
 
-## Accounts
+## Access
 
-Accounts are stored in `data/users.json` with scrypt-hashed passwords. Sessions use a 30-day HMAC-signed HttpOnly cookie, keyed by `ALEX_SECRET`. Every `/api/courses` route requires a session, and a course is visible only to the student who owns it.
+* **Open mode (default).** No login. On first visit each browser gets an anonymous, unguessable student id (`alex_student` HttpOnly cookie, `g_` + 128 random bits). Every course belongs to exactly one student, so visitors never see each other's courses.
+* **Accounts mode (`ALEX_REQUIRE_LOGIN=true`).** Usernames and scrypt-hashed passwords in `data/users.json`, with a 30-day HMAC-signed session cookie. The signing key is `ALEX_SECRET`, or one generated automatically into `data/.secret`.
+
+## Web search
+
+`server/src/library/webSearch.ts` is a TypeScript port of Pi's `brave-search` skill (reference copy and license in `vendor/pi-skills/`). Pi's coding agent runs that skill's scripts from a shell. Alex's agents have no shell, so the same logic runs as native tools:
+
+* `web_search`: Brave Search API (`count`, `freshness`, `country`, `includeContent`), or Tavily, or Wikipedia when no key is set. Used by the Librarian and, read-only, by the Tutor.
+* `read_webpage`: fetch → Mozilla Readability → Turndown markdown, with a main-content fallback. Also handles PDFs and Wikipedia's plain-text API, and refuses internal network addresses.
+* `fetch_and_ingest` (Librarian only) runs the same reader, then chunks the page into the student bag.
 
 ## API
 
-All `/api/courses` routes require a signed-in student.
+All `/api/courses` routes act for the current student (the browser's guest id in open mode, or the signed-in account).
 
 
 | Method | Path | |
 |---|---|---|
 | GET | `/api/health` | liveness (Docker health check) |
-| GET | `/api/status` | provider, model, demo mode, whether sign-up is open |
-| POST | `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout`; GET `/api/auth/me` | student accounts (signed HttpOnly cookie) |
+| GET | `/api/status` | provider, model, search provider, demo mode, access mode |
+| GET | `/api/auth/me` | current student (a guest in open mode) |
+| POST | `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout` | accounts mode only |
 | DELETE | `/api/courses/:id` | delete a course and its Pi sessions |
 | POST | `/api/courses/:id/resume` | **SSE**: continue a course whose last faculty step failed |
 | GET/POST | `/api/courses` | list / enroll (multipart: goal, files[], currentLevel, deadline, hoursPerWeek) |

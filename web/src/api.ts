@@ -30,11 +30,15 @@ export interface Status {
   demo: boolean;
   provider: string;
   model: string;
+  loginRequired: boolean;
   signupOpen: boolean;
+  search: "brave" | "tavily" | "wikipedia";
 }
 export interface Me {
   id: string;
   username: string;
+  /** Open mode: anonymous per-browser student, no login. */
+  guest?: boolean;
 }
 const post = (url: string, body?: object) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
 

@@ -62,7 +62,7 @@ export function App() {
             {status.demo ? "Demo mode · scripted faculty" : `Live · ${status.model}`}
           </span>
         )}
-        {me && (
+        {me && !me.guest && (
           <span className="user">
             {me.username}
             <button className="link" onClick={logout}>Sign out</button>

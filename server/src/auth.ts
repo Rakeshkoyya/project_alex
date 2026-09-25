@@ -4,12 +4,16 @@ import { join } from "node:path";
 import type { NextFunction, Request, Response } from "express";
 
 /**
- * Student accounts: scrypt-hashed passwords in data/users.json and a signed,
- * HttpOnly session cookie. Each account is one student; every course belongs
- * to exactly one student.
+ * Who is the student?
  *
- *   ALEX_SECRET         cookie-signing secret (generated into data/.secret if unset)
- *   ALEX_ALLOW_SIGNUP   "false" closes registration (the first account can always be created)
+ * OPEN mode (default): no login. Each browser gets an anonymous, unguessable
+ * student id in a cookie, so visitors never see each other's courses. Nothing
+ * to configure.
+ *
+ * ACCOUNTS mode (ALEX_REQUIRE_LOGIN=true): username + password, scrypt-hashed
+ * in data/users.json, with an HMAC-signed session cookie.
+ *   ALEX_SECRET        optional cookie-signing secret (auto-generated into data/.secret)
+ *   ALEX_ALLOW_SIGNUP  "false" closes registration (the first account can always be created)
  */
 
 export interface User {
@@ -22,17 +26,23 @@ export interface User {
 export type AuthedRequest = Request & { user: User };
 
 const COOKIE = "alex_session";
+const GUEST_COOKIE = "alex_student";
+const GUEST_ID = /^g_[a-f0-9]{32}$/;
 const MAX_AGE_S = 60 * 60 * 24 * 30;
 
 export class Auth {
   private users: User[];
-  private secret: Buffer;
+  private _secret?: Buffer;
+  readonly loginRequired = process.env.ALEX_REQUIRE_LOGIN === "true";
   private attempts = new Map<string, { n: number; until: number }>();
 
   constructor(private root: string) {
     const file = join(root, "users.json");
     this.users = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : [];
-    this.secret = Buffer.from(process.env.ALEX_SECRET || this.persistedSecret());
+  }
+
+  private get secret() {
+    return (this._secret ??= Buffer.from(process.env.ALEX_SECRET || this.persistedSecret()));
   }
 
   private persistedSecret() {
@@ -49,6 +59,21 @@ export class Auth {
 
   get signupOpen() {
     return this.users.length === 0 || process.env.ALEX_ALLOW_SIGNUP !== "false";
+  }
+
+  /** Open mode: the browser's anonymous student, created on first visit. */
+  guest(req: Request, res: Response): User {
+    let id = parseCookies(req.headers.cookie)[GUEST_COOKIE];
+    if (!id || !GUEST_ID.test(id)) {
+      id = `g_${randomBytes(16).toString("hex")}`;
+      res.cookie(GUEST_COOKIE, id, { httpOnly: true, sameSite: "lax", secure: req.secure, maxAge: 400 * 24 * 3600 * 1000, path: "/" });
+    }
+    return { id, username: "guest", passHash: "", createdAt: "" };
+  }
+
+  /** The current student, whatever the mode (creates the guest cookie in open mode). */
+  current(req: Request, res: Response): User | undefined {
+    return this.loginRequired ? this.userFrom(req) : this.guest(req, res);
   }
 
   signup(username: string, password: string): User {
@@ -108,9 +133,9 @@ export class Auth {
     return this.users.find((u) => u.id === id);
   }
 
-  /** Express middleware: 401 unless a valid session cookie is present. */
+  /** Express middleware: attaches the student; 401 only in accounts mode without a session. */
   require = (req: Request, res: Response, next: NextFunction) => {
-    const user = this.userFrom(req);
+    const user = this.current(req, res);
     if (!user) return void res.status(401).json({ error: "Please sign in." });
     (req as AuthedRequest).user = user;
     next();

@@ -8,6 +8,7 @@ It is built on the open-source **[Pi agent](https://github.com/badlogic/pi-mono)
 
 ```
 vendor/pi-mono/          Pi agent source (ai, agent, chord, telemetry), pinned upstream release
+vendor/pi-skills/        reference copy of Pi's brave-search skill (ported in server/src/library/webSearch.ts)
 packages/alex-harness/   @alex/harness — the Alex faculty runtime on top of Pi's AgentHarness
 server/                  the learning system: roles, tools, ZPD/BKT/FSRS engines, library, API
 web/                     React UI
@@ -55,13 +56,15 @@ With no API key, Alex runs in **demo mode**. A scripted "demo brain" stands in f
 cp .env.example .env                        # then fill in:
 # OPENROUTER_API_KEY=sk-or-v1-...
 # ALEX_MODEL=deepseek/deepseek-v4-flash     # default; per role: ALEX_MODEL_TUTOR, ALEX_MODEL_ADVISOR, ...
-# ALEX_SECRET=<openssl rand -hex 32>        # signs login cookies
+# BRAVE_API_KEY=...                         # web search (Pi's brave-search skill); optional
 set -a; . ./.env; set +a; npm run dev
 ```
 
-Anthropic also works (`ANTHROPIC_API_KEY`, `ALEX_PROVIDER=anthropic`). Optional `TAVILY_API_KEY` or `BRAVE_API_KEY` improve the Librarian's web search; otherwise it uses Wikipedia.
+Anthropic also works (`ANTHROPIC_API_KEY`, `ALEX_PROVIDER=anthropic`).
 
-Students sign up with a username and password. Each account sees only its own courses. Set `ALEX_ALLOW_SIGNUP=false` to close registration.
+**Web search** works the way Pi does it: a port of Pi's [`brave-search` skill](vendor/pi-skills/UPSTREAM.md). The Brave Search API finds results, then Mozilla Readability + Turndown turn each page into clean markdown. The Librarian uses it to find and ingest material. The Tutor uses it read-only to check facts. Set `BRAVE_API_KEY` (or `TAVILY_API_KEY`). With neither, it falls back to Wikipedia.
+
+**Access is open by default:** no login. Each browser gets its own private courses through an anonymous cookie. Set `ALEX_REQUIRE_LOGIN=true` for username/password accounts instead.
 
 ## Deploy
 

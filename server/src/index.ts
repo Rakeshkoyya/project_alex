@@ -9,7 +9,7 @@ import { Store } from "./store/store.js";
 import { Vault } from "./library/vault.js";
 import { ingestUploads, planRoadmap, prepareCourse, sessionChat, startSession, submitAssessment, tutorTurn, withCourseLock } from "./workflow/pipeline.js";
 import { ingestResource } from "./library/service.js";
-import { fetchPageText } from "./library/webSearch.js";
+import { fetchPageText, searchProvider } from "./library/webSearch.js";
 import { studentView } from "./learning/grading.js";
 import { isDue, review, type Rating } from "./learning/fsrs.js";
 import type { CourseState } from "./store/types.js";
@@ -85,12 +85,15 @@ server.get("/api/status", (_req, res) => {
     provider: faculty.models.provider,
     model: modelId(),
     harness: "pi-agent-core (vendored) + @alex/harness",
-    signupOpen: auth.signupOpen,
+    loginRequired: auth.loginRequired,
+    signupOpen: auth.loginRequired && auth.signupOpen,
+    search: searchProvider(),
     roles: ["advisor", "librarian", "tutor", "editorial", "generations (parked)"],
   });
 });
 
 server.post("/api/auth/signup", (req, res) => {
+  if (!auth.loginRequired) throw new HttpError(404, "Accounts are disabled on this server (open mode).");
   const user = auth.signup(String(req.body.username ?? ""), String(req.body.password ?? ""));
   store.ensureStudent(user.id, user.username);
   auth.setCookie(req, res, user);
@@ -98,6 +101,7 @@ server.post("/api/auth/signup", (req, res) => {
 });
 
 server.post("/api/auth/login", (req, res) => {
+  if (!auth.loginRequired) throw new HttpError(404, "Accounts are disabled on this server (open mode).");
   const user = auth.login(String(req.body.username ?? ""), String(req.body.password ?? ""), req.ip ?? "");
   auth.setCookie(req, res, user);
   res.json({ id: user.id, username: user.username });
@@ -109,9 +113,10 @@ server.post("/api/auth/logout", (_req, res) => {
 });
 
 server.get("/api/auth/me", (req, res) => {
-  const user = auth.userFrom(req);
+  const user = auth.current(req, res);
   if (!user) return void res.status(401).json({ error: "Not signed in" });
-  res.json({ id: user.id, username: user.username });
+  store.ensureStudent(user.id, user.username);
+  res.json({ id: user.id, username: user.username, guest: !auth.loginRequired });
 });
 
 // ------------------------------------------------------------------ student routes
@@ -251,7 +256,7 @@ server.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 const PORT = Number(process.env.PORT ?? 8787);
 const listener = server.listen(PORT, () => {
   const mode = faculty.demo ? "DEMO mode (no OPENROUTER_API_KEY / ANTHROPIC_API_KEY)" : `${faculty.models.provider} · ${modelId()}`;
-  console.log(`Project Alex on http://localhost:${PORT} — ${mode} · Pi AgentHarness · data ${ROOT}`);
+  console.log(`Project Alex on http://localhost:${PORT} — ${mode} · search: ${searchProvider()} · ${auth.loginRequired ? "accounts" : "open access"} · data ${ROOT}`);
 });
 
 // Graceful shutdown: close Pi sessions so JSONL files are flushed (Docker sends SIGTERM).

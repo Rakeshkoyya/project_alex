@@ -43,3 +43,20 @@ test("provider selection: OpenRouter key wins, explicit override respected", () 
   assert.throws(() => selectedProvider(), /ALEX_PROVIDER/);
   process.env = saved;
 });
+
+test("open mode (default): each browser gets its own anonymous student, no login", () => {
+  delete process.env.ALEX_REQUIRE_LOGIN;
+  const auth = new Auth(mkdtempSync(join(tmpdir(), "alex-open-")));
+  assert.equal(auth.loginRequired, false);
+  const jar: Record<string, string> = {};
+  const res = { cookie: (n: string, v: string) => void (jar[n] = v) } as any;
+  const a = auth.current({ headers: {}, secure: true } as any, res)!;
+  assert.match(a.id, /^g_[a-f0-9]{32}$/);
+  assert.ok(jar.alex_student, "guest cookie issued");
+  const again = auth.current({ headers: { cookie: `alex_student=${jar.alex_student}` } } as any, res)!;
+  assert.equal(again.id, a.id, "same browser → same student");
+  const other = auth.current({ headers: {} } as any, { cookie: () => {} } as any)!;
+  assert.notEqual(other.id, a.id, "another browser → another student");
+  const forged = auth.current({ headers: { cookie: "alex_student=../../etc" } } as any, { cookie: () => {} } as any)!;
+  assert.match(forged.id, /^g_[a-f0-9]{32}$/, "malformed ids are replaced, never used as paths");
+});

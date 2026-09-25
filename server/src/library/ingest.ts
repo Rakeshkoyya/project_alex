@@ -10,7 +10,15 @@ export async function fileToText(buf: Buffer, filename: string, mime?: string): 
     const { text } = await extractText(pdf, { mergePages: true });
     return normalize(Array.isArray(text) ? text.join("\n\n") : text);
   }
-  if (lower.endsWith(".html") || lower.endsWith(".htm")) return htmlToText(buf.toString("utf8"));
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) {
+    const { htmlToPage } = await import("./webSearch.js");
+    try {
+      const p = htmlToPage(buf.toString("utf8"));
+      return normalize(p.title ? `# ${p.title}\n\n${p.markdown}` : p.markdown);
+    } catch {
+      return htmlToText(buf.toString("utf8"));
+    }
+  }
   return normalize(buf.toString("utf8"));
 }
 
