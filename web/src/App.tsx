@@ -3,6 +3,7 @@ import { api, setOnUnauthorized, type Course, type Me, type Status } from "./api
 import { Intake } from "./pages/Intake";
 import { Login } from "./pages/Login";
 import { CourseView } from "./pages/CourseView";
+import { ThemeToggle } from "./components/ThemeToggle";
 
 function useHash() {
   const [hash, setHash] = useState(location.hash);
@@ -59,17 +60,20 @@ export function App() {
             <a href="#/new" className={`new ${route === "new" ? "on" : ""}`}>+ New course</a>
           </nav>
         )}
-        {status && (
-          <span className={`mode ${status.demo ? "demo" : "live"}`} title={status.demo ? "Set OPENROUTER_API_KEY on the server to run the real faculty" : `${status.provider} · ${status.model}`}>
-            {status.demo ? "Demo mode · scripted faculty" : `Live · ${status.model}`}
-          </span>
-        )}
-        {me && !me.guest && (
-          <span className="user">
-            {me.username}
-            <button className="link" onClick={logout}>Sign out</button>
-          </span>
-        )}
+        <div className="top-right">
+          {status && (
+            <span className={`mode ${status.demo ? "demo" : "live"}`} title={status.demo ? "Set OPENROUTER_API_KEY on the server to run the real faculty" : `${status.provider} · ${status.model}`}>
+              {status.demo ? "Demo mode · scripted faculty" : `Live · ${status.model}`}
+            </span>
+          )}
+          {me && !me.guest && (
+            <span className="user">
+              {me.username}
+              <button className="link" onClick={logout}>Sign out</button>
+            </span>
+          )}
+          <ThemeToggle />
+        </div>
       </header>
       <main>
         {me === undefined ? <div className="loading">Loading…</div> : me === null ? <Login status={status} onDone={setMe} /> : m ? <CourseView key={m[1]} id={m[1]} tab={m[2]} /> : route === "new" ? <Intake /> : <Home key={hash} explicit={route === "courses"} />}
