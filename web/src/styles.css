@@ -329,3 +329,26 @@ button.link.danger { color: var(--weak); font-size: 0.8rem; }
   .dossier table.topics th:nth-child(4), .dossier table.topics td:nth-child(4) { display: none; }
   .dossier .src { max-width: 200px; }
 }
+
+/* ---- navigation & dashboard */
+.topbar nav { display: flex; gap: 6px; }
+.topbar nav a { padding: 6px 10px; border-radius: 8px; }
+.topbar nav a.on { background: var(--accent-soft); color: var(--accent); }
+.topbar nav a.new { color: var(--accent); }
+a.button { display: inline-block; text-decoration: none; border: 1px solid var(--line-strong); border-radius: 10px; padding: 9px 16px; font-weight: 600; }
+a.button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.courses-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin: 8px 0 20px; flex-wrap: wrap; }
+.courses-head h1 { margin: 0; }
+.course-card .continue { display: block; margin-top: 10px; color: var(--accent); font-weight: 600; font-size: 0.9rem; }
+.empty-course { display: flex; flex-direction: column; gap: 6px; padding: 28px; text-decoration: none; color: var(--ink); max-width: 480px; }
+@media (max-width: 860px) {
+  .topbar nav { display: flex; }
+  .topbar nav a { padding: 4px 6px; font-size: 0.85rem; }
+  .brand small { display: none; }
+}
+.topbar nav a { white-space: nowrap; }
+@media (max-width: 520px) {
+  .topbar { gap: 8px; padding: 10px 12px; }
+  .topbar .mode { display: none; }
+  .brand b { font-size: 1.1rem; }
+}

@@ -35,6 +35,7 @@ export function App() {
     setOnUnauthorized(() => setMe(null));
   }, []);
   const m = hash.match(/^#\/course\/([^/]+)(?:\/(\w+))?/);
+  const route = m ? "course" : hash === "#/new" ? "new" : hash === "#/courses" ? "courses" : "home";
 
   const logout = async () => {
     await api.logout().catch(() => {});
@@ -54,7 +55,8 @@ export function App() {
         </a>
         {me && (
           <nav>
-            <a href="#/">My courses</a>
+            <a href="#/courses" className={route === "courses" ? "on" : ""}>My courses</a>
+            <a href="#/new" className={`new ${route === "new" ? "on" : ""}`}>+ New course</a>
           </nav>
         )}
         {status && (
@@ -70,21 +72,37 @@ export function App() {
         )}
       </header>
       <main>
-        {me === undefined ? <div className="loading">Loading…</div> : me === null ? <Login status={status} onDone={setMe} /> : m ? <CourseView key={m[1]} id={m[1]} tab={m[2]} /> : <Home />}
+        {me === undefined ? <div className="loading">Loading…</div> : me === null ? <Login status={status} onDone={setMe} /> : m ? <CourseView key={m[1]} id={m[1]} tab={m[2]} /> : route === "new" ? <Intake /> : <Home key={hash} explicit={route === "courses"} />}
       </main>
     </div>
   );
 }
 
-function Home() {
-  const [courses, setCourses] = useState<Course[]>([]);
-  useEffect(() => void api.courses().then(setCourses), []);
+/**
+ * "My courses": the dashboard. It's also the landing page once the student has
+ * a course; a first-time visitor (no courses) lands straight on the intake form.
+ */
+function Home({ explicit }: { explicit: boolean }) {
+  const [courses, setCourses] = useState<Course[]>();
+  useEffect(() => void api.courses().then(setCourses).catch(() => setCourses([])), []);
+  if (!courses) return <div className="loading">Loading…</div>;
+  if (!courses.length && !explicit) return <Intake />;
   return (
     <div className="home">
-      <Intake />
-      {courses.length > 0 && (
-        <section className="courses">
-          <h2>Your courses</h2>
+      <section className="courses">
+        <div className="courses-head">
+          <div>
+            <h1>My courses</h1>
+            <p className="muted">{courses.length ? "Pick up where you left off." : "You haven't started a course yet."}</p>
+          </div>
+          <a className="button primary" href="#/new">+ New course</a>
+        </div>
+        {courses.length === 0 ? (
+          <a className="card empty-course" href="#/new">
+            <b>Start your first course →</b>
+            <span className="muted">Tell Alex what you want to learn, or drop in your book.</span>
+          </a>
+        ) : (
           <div className="grid">
             {courses.map((c) => {
               const mastered = c.concepts.filter((k) => k.status === "mastered").length;
@@ -99,15 +117,25 @@ function Home() {
                     </div>
                   )}
                   <small className="muted">
-                    {c.concepts.length ? `${mastered}/${c.concepts.length} concepts mastered` : "Not started"}
+                    {c.concepts.length ? `${mastered}/${c.concepts.length} concepts mastered` : "Being prepared"}
                     {c.deadline && ` · due ${c.deadline}`}
                   </small>
+                  <span className="continue">{NEXT_STEP[c.stage] ?? "Open"} →</span>
                 </a>
               );
             })}
           </div>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   );
 }
+
+const NEXT_STEP: Record<string, string> = {
+  intake: "Continue setup",
+  gathering: "See progress",
+  assessment: "Take the diagnostic",
+  planning: "See your roadmap",
+  active: "Continue studying",
+  completed: "Review",
+};
