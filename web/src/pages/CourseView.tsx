@@ -100,7 +100,7 @@ export function CourseView({ id, tab }: { id: string; tab?: string }) {
             onClick={async () => {
               if (!confirm(`Delete "${course.title}" and all its progress? This can't be undone.`)) return;
               await api.deleteCourse(id);
-              go("/");
+              go("/courses");
             }}
           >
             Delete course
