@@ -15,14 +15,41 @@ export type HarnessEvent =
   | { type: "error"; role: RoleName; message: string }
   | { type: "done" };
 
+/** Called when the server says the session expired, so the app can show the sign-in screen. */
+export let onUnauthorized = () => {};
+export const setOnUnauthorized = (fn: () => void) => (onUnauthorized = fn);
+
 async function json<T>(r: Response): Promise<T> {
-  const body = await r.json();
+  const body = await r.json().catch(() => ({ error: r.statusText }));
+  if (r.status === 401 && !r.url.includes("/api/auth/")) onUnauthorized();
   if (!r.ok) throw new Error(body.error ?? r.statusText);
   return body;
 }
 
+export interface Status {
+  demo: boolean;
+  provider: string;
+  model: string;
+  loginRequired: boolean;
+  signupOpen: boolean;
+  /** e.g. "brave+tavily", "tavily" or "wikipedia" */
+  search: string;
+}
+export interface Me {
+  id: string;
+  username: string;
+  /** Open mode: anonymous per-browser student, no login. */
+  guest?: boolean;
+}
+const post = (url: string, body?: object) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
+
 export const api = {
-  status: () => fetch("/api/status").then((r) => json<{ demo: boolean; model: string }>(r)),
+  status: () => fetch("/api/status").then((r) => json<Status>(r)),
+  me: () => fetch("/api/auth/me").then((r) => (r.ok ? (r.json() as Promise<Me>) : undefined)),
+  login: (username: string, password: string) => post("/api/auth/login", { username, password }).then((r) => json<Me>(r)),
+  signup: (username: string, password: string) => post("/api/auth/signup", { username, password }).then((r) => json<Me>(r)),
+  logout: () => post("/api/auth/logout").then((r) => json<{ ok: true }>(r)),
+  deleteCourse: (id: string) => fetch(`/api/courses/${id}`, { method: "DELETE" }).then((r) => json<{ ok: true }>(r)),
   courses: () => fetch("/api/courses").then((r) => json<Course[]>(r)),
   course: (id: string) => fetch(`/api/courses/${id}`).then((r) => json<Course>(r)),
   create: (form: FormData) => fetch("/api/courses", { method: "POST", body: form }).then((r) => json<Course>(r)),
@@ -42,7 +69,11 @@ export async function streamPost(url: string, body: FormData | object | undefine
     init.headers = { "Content-Type": "application/json" };
   }
   const res = await fetch(url, init);
-  if (!res.ok || !res.body) throw new Error(`Request failed: ${res.status}`);
+  if (res.status === 401) onUnauthorized();
+  if (!res.ok || !res.body) {
+    const body = await res.json().catch(() => undefined);
+    throw new Error(body?.error ?? `Request failed: ${res.status}`);
+  }
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = "";

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, type Course } from "./api";
+import { api, setOnUnauthorized, type Course, type Me, type Status } from "./api";
 import { Intake } from "./pages/Intake";
+import { Login } from "./pages/Login";
 import { CourseView } from "./pages/CourseView";
 
 function useHash() {
@@ -26,9 +27,20 @@ const STAGE_LABEL: Record<string, string> = {
 
 export function App() {
   const hash = useHash();
-  const [status, setStatus] = useState<{ demo: boolean; model: string }>();
-  useEffect(() => void api.status().then(setStatus).catch(() => {}), []);
+  const [status, setStatus] = useState<Status>();
+  const [me, setMe] = useState<Me | null>(); // undefined = checking, null = signed out
+  useEffect(() => {
+    api.status().then(setStatus).catch(() => {});
+    api.me().then((u) => setMe(u ?? null)).catch(() => setMe(null));
+    setOnUnauthorized(() => setMe(null));
+  }, []);
   const m = hash.match(/^#\/course\/([^/]+)(?:\/(\w+))?/);
+
+  const logout = async () => {
+    await api.logout().catch(() => {});
+    setMe(null);
+    go("/");
+  };
 
   return (
     <div className="app">
@@ -40,16 +52,26 @@ export function App() {
             <small>personal university</small>
           </span>
         </a>
-        <nav>
-          <a href="#/">My courses</a>
-        </nav>
+        {me && (
+          <nav>
+            <a href="#/">My courses</a>
+          </nav>
+        )}
         {status && (
-          <span className={`mode ${status.demo ? "demo" : "live"}`} title={status.demo ? "Set ANTHROPIC_API_KEY on the server to run the real faculty" : ""}>
+          <span className={`mode ${status.demo ? "demo" : "live"}`} title={status.demo ? "Set OPENROUTER_API_KEY on the server to run the real faculty" : `${status.provider} · ${status.model}`}>
             {status.demo ? "Demo mode · scripted faculty" : `Live · ${status.model}`}
           </span>
         )}
+        {me && !me.guest && (
+          <span className="user">
+            {me.username}
+            <button className="link" onClick={logout}>Sign out</button>
+          </span>
+        )}
       </header>
-      <main>{m ? <CourseView key={m[1]} id={m[1]} tab={m[2]} /> : <Home />}</main>
+      <main>
+        {me === undefined ? <div className="loading">Loading…</div> : me === null ? <Login status={status} onDone={setMe} /> : m ? <CourseView key={m[1]} id={m[1]} tab={m[2]} /> : <Home />}
+      </main>
     </div>
   );
 }

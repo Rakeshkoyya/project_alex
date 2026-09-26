@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { fauxAssistantMessage, fauxText, fauxToolCall, Type } from "@earendil-works/pi-ai";
 
 delete process.env.ANTHROPIC_API_KEY;
+delete process.env.OPENROUTER_API_KEY;
+delete process.env.ALEX_PROVIDER;
 process.env.ALEX_DEMO_TPS = "1000000";
 const { Faculty, tool } = await import("../src/index.ts");
 import type { DemoBrain, FacultyContext, FacultyEvent, JsonlSessionMetadata } from "../src/index.ts";

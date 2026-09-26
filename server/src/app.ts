@@ -15,7 +15,18 @@ export function init(store: Store, vault: Vault) {
   app.vault = vault;
   app.faculty = new Faculty<AlexCtx>({
     demoBrain,
-    makeContext: (base, extra) => ({ ...base, store, vault, sessionId: extra.sessionId as string | undefined }),
+    makeContext: (base, extra) => ({
+      ...base,
+      // Every tool call a faculty member makes is also written to the course's activity log.
+      emit: (e) => {
+        if (e.type === "tool_end") store.log(base.courseId, e.role, e.isError ? "error" : "tool", `${e.name}: ${e.summary.split("\n")[0].slice(0, 160)}`);
+        if (e.type === "error") store.log(base.courseId, e.role, "error", e.message.slice(0, 200));
+        base.emit(e);
+      },
+      store,
+      vault,
+      sessionId: extra.sessionId as string | undefined,
+    }),
     index: {
       get: (courseId, thread) => store.getCourse(courseId).threads[thread] as JsonlSessionMetadata | undefined,
       set: (courseId, thread, meta) => store.update(courseId, (c) => (c.threads[thread] = { ...meta })),

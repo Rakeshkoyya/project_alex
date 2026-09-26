@@ -4,7 +4,7 @@ import { FacultyFeed, type FeedBlock } from "../components/FacultyFeed";
 import { Markdown } from "../components/Markdown";
 import type { RunFn } from "./CourseView";
 
-const KIND_ICON: Record<string, string> = { pdf: "📕", text: "📝", web: "🌐", vault: "🏛️", link: "🔗" };
+const KIND_ICON: Record<string, string> = { pdf: "📕", text: "📝", web: "🌐", vault: "🏛️", link: "🔗", notes: "🧠" };
 
 /** The student bag: resources, points to remember (with memory aids), notes, flashcards. */
 export function Bag({ course, run, busy, feed, refresh }: { course: Course; run: RunFn; busy: boolean; feed: FeedBlock[]; refresh: () => void }) {
@@ -16,6 +16,7 @@ export function Bag({ course, run, busy, feed, refresh }: { course: Course; run:
 
   return (
     <div className="bag">
+      {course.research && <ResearchDossier course={course} />}
       <section className="panel">
         <div className="panel-head">
           <h2>Resources <small className="muted">{bag.resources.length}</small></h2>
@@ -46,7 +47,9 @@ export function Bag({ course, run, busy, feed, refresh }: { course: Course; run:
                 <b>{r.source?.startsWith("http") ? <a href={r.source} target="_blank" rel="noreferrer">{r.title}</a> : r.title}</b>
                 <p className="muted">{r.summary}</p>
                 <small className="muted">
-                  {r.addedBy === "student" ? "added by you" : "found by the Librarian"} · {r.chunkCount ? `${r.chunkCount} passages indexed` : "reference link"}
+                  {r.kind === "notes" ? "written by the Librarian (AI), checked against the sources" : r.addedBy === "student" ? "added by you" : "found by the Librarian"}
+                  {r.foundBy?.length ? ` · found by ${r.foundBy.join(" + ")}` : ""}
+                  {r.quality !== undefined ? ` · quality ${Math.round(r.quality * 100)}%` : ""} · {r.chunkCount ? `${r.chunkCount} passages indexed` : "reference link"}
                 </small>
               </div>
             </li>
@@ -118,6 +121,52 @@ function Flashcards({ course, refresh }: { course: Course; refresh: () => void }
             <button className="primary" onClick={() => setShow(true)}>Recall it, then reveal</button>
           )}
         </div>
+      )}
+    </section>
+  );
+}
+
+/** The research behind the course: learner profile, plan, sources per topic, Advisor ↔ Librarian requests. */
+function ResearchDossier({ course }: { course: Course }) {
+  const r = course.research!;
+  const res = (id: string) => course.bag.resources.find((x) => x.id === id);
+  return (
+    <section className="panel dossier">
+      <h2>Research dossier</h2>
+      {r.profile && (
+        <p className="profile">
+          🧭 <b>{r.profile.level}</b> · {r.profile.depth} depth{r.profile.assumedKnowledge.length ? <> · builds on {r.profile.assumedKnowledge.join(", ")}</> : null}
+          {r.profile.suspectedGaps.length ? <> · watching for gaps in {r.profile.suspectedGaps.join(", ")}</> : null}
+          {r.profile.notes && <><br /><span className="muted">{r.profile.notes}</span></>}
+        </p>
+      )}
+      <table className="topics">
+        <thead>
+          <tr><th>Topic</th><th>Sources</th><th>Notes</th><th>Search</th></tr>
+        </thead>
+        <tbody>
+          {r.topics.map((t) => {
+            const sources = t.resourceIds.map(res).filter((x) => x && x.kind !== "notes");
+            return (
+              <tr key={t.id}>
+                <td><span className={`tag ${t.kind}`}>{t.kind}</span> {t.title}</td>
+                <td>{sources.length ? sources.map((x) => <div key={x!.id} className="src">{KIND_ICON[x!.kind]} {x!.title}{x!.quality !== undefined && <span className="muted"> · {Math.round(x!.quality * 100)}%</span>}</div>) : <span className="warn">none yet</span>}</td>
+                <td>{t.notesId ? "✓" : <span className="muted">…</span>}</td>
+                <td className="muted small">{t.searched ? `${t.searched.engines} · ${t.searched.candidates} candidates${t.searched.errors.length ? ` · ${t.searched.errors.length} issue(s)` : ""}` : "queued"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {r.requests.length > 0 && (
+        <>
+          <h4>Advisor ↔ Librarian</h4>
+          <ul className="requests">
+            {r.requests.map((q, i) => (
+              <li key={i}><b>{q.concept}</b>: {q.need}{q.result && <div className="muted small">↳ {q.result}</div>}</li>
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );

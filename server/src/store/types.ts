@@ -24,7 +24,8 @@ export interface Student {
 
 // ---------------------------------------------------------------- student bag
 
-export type ResourceKind = "pdf" | "text" | "web" | "vault" | "link";
+/** `notes` = lecture notes the Librarian wrote from the model's own knowledge (cross-checked against sources). */
+export type ResourceKind = "pdf" | "text" | "web" | "vault" | "link" | "notes";
 
 export interface Resource {
   id: string;
@@ -33,6 +34,11 @@ export interface Resource {
   source?: string; // url or file name
   summary?: string;
   addedBy: "student" | "librarian";
+  /** Research topic this resource was gathered for. */
+  topicId?: string;
+  /** Web sources: which engines found it and its source-quality score. */
+  foundBy?: string[];
+  quality?: number;
   chunkCount: number;
   addedAt: string;
 }
@@ -244,6 +250,8 @@ export interface CourseState {
   sessions: StudySession[];
   diary: DiaryEntry[];
   activity: ActivityEvent[];
+  /** The research dossier behind the curriculum (learner profile, research plan, what was found). */
+  research?: Research;
   /** Pi session metadata for every faculty thread of this course (thread key → JSONL session). */
   threads: Record<string, PiSessionRef>;
 }
@@ -256,4 +264,38 @@ export interface PiSessionRef {
   cwd: string;
   path: string;
   modifiedAt: number;
+}
+
+// ---------------------------------------------------------------- research
+
+/** The Advisor's read of who this student is, used to pitch research and the curriculum. */
+export interface LearnerProfile {
+  level: string; // e.g. "grade 9", "first-year undergraduate", "complete beginner"
+  audience: string; // phrase appended to searches, e.g. "for high school students"
+  depth: "intro" | "standard" | "deep";
+  assumedKnowledge: string[]; // what we expect they already know (the ZPD anchor)
+  suspectedGaps: string[]; // foundations that may be missing
+  notes: string;
+}
+
+export interface ResearchTopic {
+  id: string;
+  title: string;
+  kind: "core" | "foundation";
+  queries: string[]; // web queries (level-aware)
+  status: "planned" | "researched" | "noted";
+  resourceIds: string[]; // web/vault sources ingested for it
+  notesId?: string; // Librarian's lecture notes for it
+  searched?: { engines: string; candidates: number; ingested: number; errors: string[] };
+}
+
+export interface Research {
+  profile?: LearnerProfile;
+  topics: ResearchTopic[];
+  /** Concepts the Advisor asked the Librarian to find more material for. */
+  requests: { concept: string; need: string; at: string; result?: string }[];
+  /** Requests made after this time count toward the current phase's limit. */
+  windowStart?: string;
+  startedAt: string;
+  finishedAt?: string;
 }
